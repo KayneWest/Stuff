@@ -3,6 +3,11 @@ from bs4 import BeautifulSoup
 from urllib2 import urlopen
 import time
 import re
+import datetime
+
+def log(msg):
+	print("{} {}".format(str(datetime.datetime.now()), msg))
+
 
 url="http://www.uic.edu/ucat/courses/"
 soup = BeautifulSoup(urlopen(url).read())
