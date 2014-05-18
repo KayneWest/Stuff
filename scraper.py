@@ -1,6 +1,8 @@
 
 from bs4 import BeautifulSoup
 from urllib2 import urlopen
+import time
+import re
 
 url="http://www.uic.edu/ucat/courses/"
 soup = BeautifulSoup(urlopen(url).read())
@@ -26,6 +28,7 @@ for i in actual_links:
 	for course in courses:
 		course=re.sub(r'</b><br /><b>.*.</b>|<i>Prerequisite.*','',course).replace('<b>','').replace('</b>','').split('\n')
 		course_full[course[0]]=course[1]
+		
 for k,v in dicitonary
 	
 	
