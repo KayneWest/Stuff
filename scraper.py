@@ -1,3 +1,7 @@
+
+from bs4 import BeautifulSoup
+from urllib2 import urlopen
+
 url="http://www.uic.edu/ucat/courses/"
 soup = BeautifulSoup(urlopen(url).read())
 links = soup.findAll("a")
