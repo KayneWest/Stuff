@@ -31,7 +31,7 @@ for i in actual_links:
 	soup = BeautifulSoup(urlopen(url).read())
 	courses=re.findall(pattern2,str(soup))
 	for course in courses:
-		course=re.sub(r'</b><br /><b>.*.</b>|<i>Prerequisite.*','',course).replace('<b>','').replace('</b>','').split('\n')
+		course=re.sub(r'</b><br /><b>.*.</b>|<i>Prerequisite.*|<br/>.*hour.?\.','',course).replace('<b>','').replace('</b>','').split('\n')
 		course_full[course[0]]=course[1]
 		
 for k,v in dicitonary
