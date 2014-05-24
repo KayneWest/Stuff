@@ -3,7 +3,7 @@
 # other sigmoid functions here: http://en.wikipedia.org/wiki/Sigmoid_function
  
 import numpy as np
-import pylab
+import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
  
 def sigmoid(x, x0, k):
@@ -19,8 +19,8 @@ print popt
 x = np.linspace(-1, 15, 50)
 y = sigmoid(x, *popt)
  
-pylab.plot(xdata, ydata, 'o', label='data')
-pylab.plot(x,y, label='fit')
-pylab.ylim(0, 1.05)
-pylab.legend(loc='best')
-pylab.show()
+plt.plot(xdata, ydata, 'o', label='data')
+plt.plot(x,y, label='fit')
+plt.ylim(0, 1.05)
+plt.legend(loc='best')
+plt.show()
