@@ -225,7 +225,7 @@ def build_extended_tree(root, p=1, q=1):
     
     # Step 1
     for i in range(p-1):
-        node = tree.Node(label="*")
+        node = Node(label="*")
         node.addkid(root)
         root = node
         
@@ -259,14 +259,14 @@ def q_append_non_leaf(node, q):
         children a node is added.
     """
     for i in range(q-1):
-        node.addkid(tree.Node("*"), before=True)
-        node.addkid(tree.Node("*"))
+        node.addkid(Node("*"), before=True)
+        node.addkid(Node("*"))
 
 def q_append_leaf(node, q):
     """
         This method will append q null node children to the given node. (Step 3)
     """
-    for i in range(q):  node.addkid(tree.Node("*"))
+    for i in range(q):  node.addkid(Node("*"))
     
     import unittest, random, itertools
 
@@ -300,8 +300,8 @@ class ProfileCheck(unittest.TestCase):
         self.profiles = list()
     
         # Construct one-node trees
-        self.small_tree1 = tree.Node("a")
-        self.small_tree2 = tree.Node("b")
+        self.small_tree1 = Node("a")
+        self.small_tree2 = Node("b")
         self.trees.append(self.small_tree1)
         self.trees.append(self.small_tree2)
         
@@ -309,19 +309,19 @@ class ProfileCheck(unittest.TestCase):
         self.small_profile2 = [['*','b','*','*','*']]
         
         # Construct a few more known trees
-        self.known_tree1 =  (tree.Node("a")
-                                .addkid(tree.Node("a")
-                                    .addkid(tree.Node("e"))
-                                    .addkid(tree.Node("b")))
-                                .addkid(tree.Node("b"))
-                                .addkid(tree.Node("c")))
+        self.known_tree1 =  (Node("a")
+                                .addkid(Node("a")
+                                    .addkid(Node("e"))
+                                    .addkid(Node("b")))
+                                .addkid(Node("b"))
+                                .addkid(Node("c")))
                                 
-        self.known_tree2 =  (tree.Node("a")
-                                .addkid(tree.Node("a")
-                                    .addkid(tree.Node("e"))
-                                    .addkid(tree.Node("b")))
-                                .addkid(tree.Node("b"))
-                                .addkid(tree.Node("x")))
+        self.known_tree2 =  (Node("a")
+                                .addkid(Node("a")
+                                    .addkid(Node("e"))
+                                    .addkid(Node("b")))
+                                .addkid(Node("b"))
+                                .addkid(Node("x")))
         
         self.trees.append(self.known_tree1)
         self.trees.append(self.known_tree2)
@@ -432,13 +432,13 @@ def randtree(depth=2, alpha='abcdefghijklmnopqrstuvwxyz', repeat=2, width=2):
     labels = [''.join(x) for x in itertools.product(alpha, repeat=repeat)]
     random.shuffle(labels)
     labels = (x for x in labels)
-    root = tree.Node("root")
+    root = Node("root")
     p = [root]
     c = list()
     for x in xrange(depth-1):
         for y in p:
             for z in xrange(random.randint(1,1+width)):
-                n = tree.Node(labels.next())
+                n = Node(labels.next())
                 y.addkid(n)
                 c.append(n)
         p = c
