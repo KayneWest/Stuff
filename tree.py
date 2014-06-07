@@ -1,4 +1,4 @@
-import copy
+import copy,unittest, random, itertools
 
 class Node(object):
     """
@@ -268,7 +268,7 @@ def q_append_leaf(node, q):
     """
     for i in range(q):  node.addkid(Node("*"))
     
-    import unittest, random, itertools
+
 
 class ProfileCheck(unittest.TestCase):
     """
