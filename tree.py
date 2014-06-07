@@ -345,7 +345,7 @@ class ProfileCheck(unittest.TestCase):
             
         # Generate Profiles
         for tree1 in self.trees:
-            self.profiles.append(PyGram.Profile(tree1, self.p, self.q))
+            self.profiles.append(Profile(tree1, self.p, self.q))
         
     def testProfileCreation(self):
         """Tests the creation of profiles against known profiles."""
@@ -399,17 +399,17 @@ class RegisterCheck(unittest.TestCase):
         for i in range(10):
             sizes.append(random.randint(1, 50))
         for size in sizes:
-            reg = PyGram.ShiftRegister(size)
+            reg = ShiftRegister(size)
             self.assertEqual(size, len(reg.register))
             for item in reg.register:
                 self.assertEqual(item, "*")
                 
     def testRegisterConcatenation(self):
         """concatenate should return the union of the two registers as a list"""
-        reg_one = PyGram.ShiftRegister(2)
+        reg_one = ShiftRegister(2)
         reg_one.shift("a")
         reg_one.shift("b")
-        reg_two = PyGram.ShiftRegister(3)
+        reg_two = ShiftRegister(3)
         reg_two.shift("c")
         reg_two.shift("d")
         reg_two.shift("e")
@@ -418,7 +418,7 @@ class RegisterCheck(unittest.TestCase):
             
     def testRegisterShift(self):
         """shift should remove an item from the left and add a new item to the right"""
-        reg = PyGram.ShiftRegister(3)
+        reg = ShiftRegister(3)
         reg.register[0] = "a"
         reg.register[1] = "b"
         reg.register[2] = "c"
