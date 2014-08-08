@@ -10,42 +10,27 @@ import matplotlib.pyplot
 " The Convolutional Neural Network class """
 
 class ConvolutionalNeuralNetwork(object):
-
     #######################################################################################
     """ Initialization of the network """
-
     def __init__(self, W1, b1, zca_white, mean_patch, patch_dim, pool_dim):
-    
         """ Store the weights, taking into account preprocessing done """
-    
         self.W = numpy.dot(W1, zca_white)
         self.b = b1 - numpy.dot(self.W, mean_patch)
-        
         """ Variables associated with the network """
-        
         self.patch_dim = patch_dim
         self.pool_dim  = pool_dim
-
     #######################################################################################
     """ Returns elementwise sigmoid output of input array """
-    
     def sigmoid(self, x):
-    
         return (1 / (1 + numpy.exp(-x)))
-        
     #######################################################################################
     """ Returns the convolved features of the input images """
-    
     def convolve(self, input_images, num_features):
-    
         """ Extract useful values """
-    
         image_dim      = input_images.shape[0]
         image_channels = input_images.shape[2]
         num_images     = input_images.shape[3]
-        
         """ Assign memory for the convolved features """
-        
         conv_dim           = image_dim - self.patch_dim + 1
         convolved_features = numpy.zeros((num_features, num_images, conv_dim, conv_dim));
         
