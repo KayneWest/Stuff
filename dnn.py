@@ -42,22 +42,22 @@ def build_shared_zeros(shape, name):
  
  
 class Convolutional_Pool_Layer(object):
-     def __init__(self, rng, input, n_in, n_out, W=None, b=None, fdrop=False, patch_dim, pool_dim):):
-        if W is None:
-            W_values = numpy.asarray(rng.uniform(
-                low=-numpy.sqrt(6. / (n_in + n_out)),
-                high=numpy.sqrt(6. / (n_in + n_out)),
-                size=(n_in, n_out)), dtype=theano.config.floatX)
-            W_values *= 4  # This works for sigmoid activated networks!
-            W = theano.shared(value=W_values, name='W', borrow=True)
-        if b is None:
-            b = build_shared_zeros((n_out,), 'b')
-        self.input = input
-        self.W = W
-        self.b = b
-        self.params = [self.W, self.b]
-        self.patch_dim = patch_dim
-        self.pool_dim  = pool_dim
+    def __init__(self, rng, input, n_in, n_out, patch_dim, pool_dim, W=None, b=None, fdrop=False):
+       if W is None:
+           W_values = numpy.asarray(rng.uniform(
+               low=-numpy.sqrt(6. / (n_in + n_out)),
+               high=numpy.sqrt(6. / (n_in + n_out)),
+               size=(n_in, n_out)), dtype=theano.config.floatX)
+           W_values *= 4  # This works for sigmoid activated networks!
+           W = theano.shared(value=W_values, name='W', borrow=True)
+       if b is None:
+           b = build_shared_zeros((n_out,), 'b')
+       self.input = input
+       self.W = W
+       self.b = b
+       self.params = [self.W, self.b]
+       self.patch_dim = patch_dim
+       self.pool_dim  = pool_dim
     #######################################################################################
     """ Returns elementwise sigmoid output of input array """
     def sigmoid(self, x):
@@ -116,7 +116,7 @@ class Convolutional_Pool_Layer(object):
         return pooled_features 
         
         
- def getPooledFeatures(network, images, num_features, res_dim, step_size):
+def getPooledFeatures(network, images, num_features, res_dim, step_size):
     num_images = images.shape[3]
     """ Initialize pooled features as array of zeros """
     pooled_features_data = numpy.zeros((num_features, num_images, res_dim, res_dim))
@@ -204,13 +204,11 @@ class DatasetMiniBatchIterator(object):
                     i = int(self.rng.rand(1) * ((n_samples+BATCH_SIZE-1) / BATCH_SIZE))
                 else:
                     i = int(math.floor(self.rng.rand(1) * n_samples))
-                yield (i, self.x[i*self.batch_size:(i+1)*self.batch_size],
-                       self.y[i*self.batch_size:(i+1)*self.batch_size])
+                yield (i, self.x[i*self.batch_size:(i+1)*self.batch_size],self.y[i*self.batch_size:(i+1)*self.batch_size])
         else:
             for i in xrange((n_samples + self.batch_size - 1)
                             / self.batch_size):
-                yield (self.x[i*self.batch_size:(i+1)*self.batch_size],
-                       self.y[i*self.batch_size:(i+1)*self.batch_size])
+                yield (self.x[i*self.batch_size:(i+1)*self.batch_size],self.y[i*self.batch_size:(i+1)*self.batch_size])
  
  
 class LogisticRegression:
@@ -583,7 +581,7 @@ def add_fit_and_score(class_to_chg):
             timer = time.time()
             for x, y in train_set_iterator:
                 if method == 'sgd' or method == 'adagrad':
-                    avg_cost = train_fn(x, y, lr=0.02)  # TODO: you have to
+                    avg_cost = train_fn(x, y, lr=0.019999999553)  # TODO: you have to
                                                          # play with this
                                                          # learning rate
                                                          # (dataset dependent)
