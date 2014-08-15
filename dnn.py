@@ -737,7 +737,7 @@ class RegularizedNet(NeuralNet):
             self.cost = self.cost + L2_reg * L2
 
 
-class RegularizedNet(ConvNet):
+class RegularizedConvNet(ConvNet):
     """ Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=100,
@@ -838,7 +838,7 @@ class DropoutNet(NeuralNet):
                 + "dropout rates: " + str(self.dropout_rates)
  
 
-class DropoutNet(ConvNet):
+class DropoutConvNet(ConvNet):
     """ Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=40*3,
