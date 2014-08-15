@@ -583,7 +583,7 @@ def add_fit_and_score(class_to_chg):
             timer = time.time()
             for x, y in train_set_iterator:
                 if method == 'sgd' or method == 'adagrad':
-                    avg_cost = train_fn(x, y, lr=1.E-2)  # TODO: you have to
+                    avg_cost = train_fn(x, y, lr=0.02)  # TODO: you have to
                                                          # play with this
                                                          # learning rate
                                                          # (dataset dependent)
