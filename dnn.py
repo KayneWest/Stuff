@@ -5,6 +5,8 @@ A deep neural network with or w/o dropout in one file.
 import numpy, theano, sys, math
 from theano import tensor as T
 from theano import shared
+from theano.tensor.signal import downsample
+from theano.tensor.nnet import conv
 from theano.tensor.shared_randomstreams import RandomStreams
 from collections import OrderedDict
  
