@@ -558,7 +558,7 @@ class ConvNet(object):
         layer_input = self.x
         
         for layer_type, n_in, n_out in zip(layers_types,
-                self.layers_ins, self.layers_outs):
+                self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions
             this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, n_in=n_in, n_out=n_out)
             assert hasattr(this_layer, 'output')
