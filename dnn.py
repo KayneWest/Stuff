@@ -41,103 +41,108 @@ def build_shared_zeros(shape, name):
             name=name, borrow=True)
  
  
-class Convolutional_Pool_Layer(object):
-    def __init__(self, rng, input, n_in, n_out, patch_dim, pool_dim, W=None, b=None, fdrop=False):
-       if W is None:
-           W_values = numpy.asarray(rng.uniform(
-               low=-numpy.sqrt(6. / (n_in + n_out)),
-               high=numpy.sqrt(6. / (n_in + n_out)),
-               size=(n_in, n_out)), dtype=theano.config.floatX)
-           W_values *= 4  # This works for sigmoid activated networks!
-           W = theano.shared(value=W_values, name='W', borrow=True)
-       if b is None:
-           b = build_shared_zeros((n_out,), 'b')
-       self.input = input
-       self.W = W
-       self.b = b
-       self.params = [self.W, self.b]
-       self.patch_dim = patch_dim
-       self.pool_dim  = pool_dim
-    #######################################################################################
-    """ Returns elementwise sigmoid output of input array """
-    def sigmoid(self, x):
-        return (1 / (1 + numpy.exp(-x)))
-    def ReLU(self,x):
-        return max(0,x)
-    #######################################################################################
-    """ Returns the convolved features of the input images """
-    def convolve(self, input_images, num_features):
-        """ Extract useful values """
-        image_dim      = input_images.shape[0]
-        image_channels = input_images.shape[2]
-        num_images     = input_images.shape[3]
-        """ Assign memory for the convolved features """
-        conv_dim           = image_dim - self.patch_dim + 1
-        convolved_features = numpy.zeros((num_features, num_images, conv_dim, conv_dim));
-        for image_num in range(num_images):
-            for feature_num in range(num_features):
-                """ Initialize convolved image as array of zeros """
-                convolved_image = numpy.zeros((conv_dim, conv_dim))
-                for channel in range(image_channels):
-                    """ Extract feature corresponding to the indices """
-                    limit0  = self.patch_dim * self.patch_dim * channel
-                    limit1  = limit0 + self.patch_dim * self.patch_dim
-                    feature = self.W[feature_num, limit0 : limit1].reshape(self.patch_dim, self.patch_dim)
-                    """ Image to be convolved """
-                    image = input_images[:, :, channel, image_num]
-                    """ Convolve image with the feature and add to existing matrix """
-                    convolved_image = convolved_image + scipy.signal.convolve2d(image, feature, 'valid');
-                """ Take sigmoid transform and store """
-                convolved_image = self.ReLU(convolved_image + self.b[feature_num, 0])
-                convolved_features[feature_num, image_num, :, :] = convolved_image
-        return convolved_features
-    #######################################################################################
-    """ Pools the given convolved features """
-    def pool(self, convolved_features):
-        """ Extract useful values """
-        num_features = convolved_features.shape[0]
-        num_images   = convolved_features.shape[1]
-        conv_dim     = convolved_features.shape[2]
-        res_dim      = conv_dim / self.pool_dim
-        """ Initialize pooled features as array of zeros """
-        pooled_features = numpy.zeros((num_features, num_images, res_dim, res_dim))
-        for image_num in range(num_images):
-            for feature_num in range(num_features):
-                for pool_row in range(res_dim):
-                    row_start = pool_row * self.pool_dim
-                    row_end   = row_start + self.pool_dim
-                    for pool_col in range(res_dim):
-                        col_start = pool_col * self.pool_dim
-                        col_end   = col_start + self.pool_dim
-                        """ Extract image patch and calculate mean pool """
-                        patch = convolved_features[feature_num, image_num, row_start : row_end,
-                                                   col_start : col_end]
-                        pooled_features[feature_num, image_num, pool_row, pool_col] = numpy.mean(patch)
-        return pooled_features 
+#class Convolutional_Pool_Layer(object):
+#    def __init__(self, rng, input, n_in, n_out, patch_dim, pool_dim, W=None, b=None, fdrop=False):
+#       if W is None:
+#           W_values = numpy.asarray(rng.uniform(
+#               low=-numpy.sqrt(6. / (n_in + n_out)),
+#               high=numpy.sqrt(6. / (n_in + n_out)),
+#               size=(n_in, n_out)), dtype=theano.config.floatX)
+#           W_values *= 4  # This works for sigmoid activated networks!
+#           W = theano.shared(value=W_values, name='W', borrow=True)
+#       if b is None:
+#           b = build_shared_zeros((n_out,), 'b')
+#       self.input = input
+#       self.W = W
+#       self.b = b
+#       self.params = [self.W, self.b]
+#       self.patch_dim = patch_dim
+#       self.pool_dim  = pool_dim
+#    #######################################################################################
+#    """ Returns elementwise sigmoid output of input array """
+#    def sigmoid(self, x):
+#        return (1 / (1 + numpy.exp(-x)))
+#    def ReLU(self,x):
+#        return max(0,x)
+#    #######################################################################################
+#    """ Returns the convolved features of the input images """
+#    def convolve(self, input_images, num_features):
+#        """ Extract useful values """
+#        #for mnist practice
+#        #image_dim      = input_images.shape[0]
+#        #image_channels = input_images.shape[2]
+#        #num_images     = input_images.shape[3]
+#        image_dim      = input_images[1].shape[0]
+#        image_channels = input_images[1].shape[0]
+#        num_images     = input_images.shape[0]
+#        """ Assign memory for the convolved features """
+#        conv_dim           = image_dim - self.patch_dim + 1
+#        convolved_features = numpy.zeros((num_features, num_images, conv_dim, conv_dim));
+#        for image_num in range(num_images):
+#            for feature_num in range(num_features):
+#                """ Initialize convolved image as array of zeros """
+#                convolved_image = numpy.zeros((conv_dim, conv_dim))
+#                for channel in range(image_channels):
+#                    """ Extract feature corresponding to the indices """
+#                    limit0  = self.patch_dim * self.patch_dim * channel
+#                    limit1  = limit0 + self.patch_dim * self.patch_dim
+#                    feature = self.W[feature_num, limit0 : limit1].reshape(self.patch_dim, self.patch_dim)
+#                    """ Image to be convolved """
+#                    image = input_images[:, :, channel, image_num]
+#                    """ Convolve image with the feature and add to existing matrix """
+#                    convolved_image = convolved_image + scipy.signal.convolve2d(image, feature, 'valid');
+#                """ Take sigmoid transform and store """
+#                convolved_image = self.ReLU(convolved_image + self.b[feature_num, 0])
+#                convolved_features[feature_num, image_num, :, :] = convolved_image
+#        return convolved_features
+#    #######################################################################################
+#    """ Pools the given convolved features """
+#    def pool(self, convolved_features):
+#        """ Extract useful values """
+#        num_features = convolved_features.shape[0]
+#        num_images   = convolved_features.shape[1]
+#        conv_dim     = convolved_features.shape[2]
+#        res_dim      = conv_dim / self.pool_dim
+#        """ Initialize pooled features as array of zeros """
+#        pooled_features = numpy.zeros((num_features, num_images, res_dim, res_dim))
+#        for image_num in range(num_images):
+#            for feature_num in range(num_features):
+#                for pool_row in range(res_dim):
+#                    row_start = pool_row * self.pool_dim
+#                    row_end   = row_start + self.pool_dim
+#                    for pool_col in range(res_dim):
+#                        col_start = pool_col * self.pool_dim
+#                        col_end   = col_start + self.pool_dim
+#                        """ Extract image patch and calculate mean pool """
+#                       patch = convolved_features[feature_num, image_num, row_start : row_end,
+#                                                   col_start : col_end]
+#                        pooled_features[feature_num, image_num, pool_row, pool_col] = numpy.mean(patch)
+#       return pooled_features 
         
         
-def getPooledFeatures(network, images, num_features, res_dim, step_size):
-    num_images = images.shape[3]
-    """ Initialize pooled features as array of zeros """
-    pooled_features_data = numpy.zeros((num_features, num_images, res_dim, res_dim))
-    for step in range(num_images / step_size):
-        """ Limits to access batch of images """
-        limit0 = step_size * step
-        limit1 = step_size * (step+1)
-        image_batch = images[:, :, :, limit0 : limit1]
-        """ Calculate pooled features for the image batch """
-        convolved_features = network.convolve(image_batch, num_features)
-        pooled_features    = network.pool(convolved_features)
-        pooled_features_data[:, limit0 : limit1, :, :] = pooled_features
-        """ Avoid memory overflow """
-        del(image_batch)
-        del(convolved_features)
-        del(pooled_features)
-    """ Reshape data for training / testing """
-    input_size = pooled_features_data.size / num_images
-    pooled_features_data = numpy.transpose(pooled_features_data, (0, 2, 3, 1))
-    pooled_features_data = pooled_features_data.reshape(input_size, num_images)
-    return pooled_features_data
+#def getPooledFeatures(network, images, num_features, res_dim, step_size):
+#    num_images = images.shape[0]
+#    """ Initialize pooled features as array of zeros """
+#    pooled_features_data = numpy.zeros((num_features, num_images, res_dim, res_dim))
+#    for step in range(num_images / step_size):
+#        """ Limits to access batch of images """
+#        limit0 = step_size * step
+#        limit1 = step_size * (step+1)
+#        #image_batch = images[:, :, :, limit0 : limit1]
+#        image_batch = images
+#        """ Calculate pooled features for the image batch """
+#        convolved_features = network.convolve(image_batch, num_features)
+#        pooled_features    = network.pool(convolved_features)
+#        pooled_features_data[:, limit0 : limit1, :, :] = pooled_features
+#        """ Avoid memory overflow """
+#        del(image_batch)
+#        del(convolved_features)
+#        del(pooled_features)
+#    """ Reshape data for training / testing """
+#    input_size = pooled_features_data.size / num_images
+#    pooled_features_data = numpy.transpose(pooled_features_data, (0, 2, 3, 1))
+#    pooled_features_data = pooled_features_data.reshape(input_size, num_images)
+#    return pooled_features_data
 
  
 class Linear(object):
@@ -163,7 +168,64 @@ class Linear(object):
     def __repr__(self):
         return "Linear"
  
- 
+class ConvolutionalLayer(object):
+    """Convolutional Layer with pooling"""
+    def __init__(self, rng, input, filter_shape, image_shape, poolsize=(2, 2)):
+        """
+        Allocate a ConvolutionalLayer with shared variable internal parameters.
+
+        :type rng: numpy.random.RandomState
+        :param rng: a random number generator used to initialize weights
+
+        :type input: theano.tensor.dtensor4
+        :param input: symbolic image tensor, of shape image_shape
+
+        :type filter_shape: tuple or list of length 4
+        :param filter_shape: (number of filters, num input feature maps,
+                              filter height,filter width)
+
+        :type image_shape: tuple or list of length 4
+        :param image_shape: (batch size, num input feature maps,
+                             image height, image width)
+
+        :type poolsize: tuple or list of length 2
+        :param poolsize: the downsampling (pooling) factor (#rows,#cols)
+        """
+        assert image_shape[1] == filter_shape[1]
+        self.input = input
+
+        # initialize weight values: the fan-in of each hidden neuron is
+        # restricted by the size of the receptive fields.
+        fan_in =  numpy.prod(filter_shape[1:])
+        W_values = numpy.asarray(rng.uniform(
+              low=-numpy.sqrt(3./fan_in),
+              high=numpy.sqrt(3./fan_in),
+              size=filter_shape), dtype=theano.config.floatX)
+        self.W = theano.shared(value=W_values, name='W')
+
+        # the bias is a 1D tensor -- one bias per output feature map
+        b_values = numpy.zeros((filter_shape[0],), dtype=theano.config.floatX)
+        self.b = theano.shared(value=b_values, name='b')
+
+        # convolve input feature maps with filters
+        conv_out = conv.conv2d(input, self.W,
+                filter_shape=filter_shape, image_shape=image_shape)
+
+        # downsample each feature map individually, using maxpooling
+        pooled_out = downsample.max_pool_2d(conv_out, poolsize, ignore_border=True)
+
+        # add the bias term. Since the bias is a vector (1D array), we first
+        # reshape it to a tensor of shape (1, n_filters, 1, 1). Each bias will thus
+        # be broadcasted across mini-batches and feature map width & height
+        self.output = T.tanh(pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+
+        # store parameters of this layer
+        self.params = [self.W, self.b]
+
+
+#ConvolutionalLayer(rng, input=layer0_input, image_shape=(batch_size, 1, 28, 28),filter_shape=(20, 1, 5, 5), poolsize=(2, 2))
+#layer2_input = layer1.output.flatten(2)
+
 class SigmoidLayer(Linear):
     """ Sigmoid activation layer (sigmoid(W.X + b)) """
     def __init__(self, rng, input, n_in, n_out, W=None, b=None, fdrop=False):
@@ -174,7 +236,29 @@ class SigmoidLayer(Linear):
         self.output = T.nnet.sigmoid(self.pre_activation)
  
  
+class Conv_to_SigmoidLayer(ConvolutionalLayer.output.flatten(2)):
+    """ Sigmoid activation layer (sigmoid(W.X + b)) """
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None, fdrop=False):
+        super(SigmoidLayer, self).__init__(rng, input, n_in, n_out, W, b)
+        self.pre_activation = self.output
+        if fdrop:
+            self.pre_activation = fast_dropout(rng, self.pre_activation)
+        self.output = T.nnet.sigmoid(self.pre_activation) 
+ 
+ 
 class ReLU(Linear):
+    """ Rectified Linear Unit activation layer (max(0, W.X + b)) """
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None, fdrop=False):
+        if b is None:
+            b = build_shared_zeros((n_out,), 'b')
+        super(ReLU, self).__init__(rng, input, n_in, n_out, W, b)
+        self.pre_activation = self.output
+        if fdrop:
+            self.pre_activation = fast_dropout(rng, self.pre_activation)
+        self.output = relu_f(self.pre_activation)
+
+
+class Conv_to_ReLU(ConvolutionalLayer.output.flatten(2)):
     """ Rectified Linear Unit activation layer (max(0, W.X + b)) """
     def __init__(self, rng, input, n_in, n_out, W=None, b=None, fdrop=False):
         if b is None:
