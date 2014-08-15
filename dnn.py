@@ -525,7 +525,7 @@ class ConvNet(object):
     """ Neural network (not regularized, without dropout) """
     def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*3,
-                 layers_types=[ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_types=[ConvolutionalLayer, Conv_to_ReLU, ReLU, ReLU, LogisticRegression],
                  layers_sizes=[1024, 1024, 1024, 1024],
                  n_outs=62 * 3,
                  rho=0.9,
@@ -705,10 +705,39 @@ class ConvNet(object):
         return scoref 
  
  
- 
- 
- 
 class RegularizedNet(NeuralNet):
+    """ Neural net with L1 and L2 regularization """
+    def __init__(self, numpy_rng, theano_rng=None,
+                 n_ins=100,
+                 layers_types=[ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[1024, 1024, 1024],
+                 n_outs=2,
+                 rho=0.9,
+                 eps=1.E-6,
+                 L1_reg=0.,
+                 L2_reg=0.,
+                 max_norm=0.,
+                 debugprint=False):
+        """
+        Feedforward neural network with added L1 and/or L2 regularization.
+        """
+        super(RegularizedNet, self).__init__(numpy_rng, theano_rng, n_ins,
+                layers_types, layers_sizes, n_outs, rho, eps, max_norm,
+                debugprint)
+ 
+        L1 = shared(0.)
+        for param in self.params:
+            L1 += T.sum(abs(param))
+        if L1_reg > 0.:
+            self.cost = self.cost + L1_reg * L1
+        L2 = shared(0.)
+        for param in self.params:
+            L2 += T.sum(param ** 2)
+        if L2_reg > 0.:
+            self.cost = self.cost + L2_reg * L2
+
+
+class RegularizedNet(ConvNet):
     """ Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=100,
@@ -808,7 +837,77 @@ class DropoutNet(NeuralNet):
         return super(DropoutNet, self).__repr__() + "\n"\
                 + "dropout rates: " + str(self.dropout_rates)
  
+
+class DropoutNet(ConvNet):
+    """ Neural net with dropout (see Hinton's et al. paper) """
+    def __init__(self, numpy_rng, theano_rng=None,
+                 n_ins=40*3,
+                 layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[4000, 4000, 4000, 4000],
+                 dropout_rates=[0.0, 0.5, 0.5, 0.5, 0.5],
+                 n_outs=62 * 3,
+                 rho=0.9,
+                 eps=1.E-6,
+                 max_norm=0.,
+                 fast_drop=False,
+                 debugprint=False):
+        """
+        Feedforward neural network with dropout regularization.
+        """
+        super(DropoutNet, self).__init__(numpy_rng, theano_rng, n_ins,
+                layers_types, layers_sizes, n_outs, rho, eps, max_norm,
+                debugprint)
  
+        self.dropout_rates = dropout_rates
+        if fast_drop:
+            if dropout_rates[0]:
+                dropout_layer_input = fast_dropout(numpy_rng, self.x)
+            else:
+                dropout_layer_input = self.x
+        else:
+            dropout_layer_input = dropout(numpy_rng, self.x, p=dropout_rates[0])
+        self.dropout_layers = []
+ 
+        for layer, layer_type, n_in, n_out, dr in zip(self.layers,
+                layers_types, self.layers_ins, self.layers_outs,
+                dropout_rates[1:] + [0]):  # !!! we do not dropout anything
+                                           # from the last layer !!!
+            if dr:
+                if fast_drop:
+                    this_layer = layer_type(rng=numpy_rng,
+                            input=dropout_layer_input, n_in=n_in, n_out=n_out,
+                            W=layer.W, b=layer.b, fdrop=True)
+                else:
+                    this_layer = layer_type(rng=numpy_rng,
+                            input=dropout_layer_input, n_in=n_in, n_out=n_out,
+                            W=layer.W * 1. / (1. - dr),
+                            b=layer.b * 1. / (1. - dr))
+                    # N.B. dropout with dr==1 does not dropanything!!
+                    this_layer.output = dropout(numpy_rng, this_layer.output, dr)
+            else:
+                this_layer = layer_type(rng=numpy_rng,
+                        input=dropout_layer_input, n_in=n_in, n_out=n_out,
+                        W=layer.W, b=layer.b)
+ 
+            assert hasattr(this_layer, 'output')
+            self.dropout_layers.append(this_layer)
+            dropout_layer_input = this_layer.output
+ 
+        assert hasattr(self.layers[-1], 'training_cost')
+        assert hasattr(self.layers[-1], 'errors')
+        # these are the dropout costs
+        self.mean_cost = self.dropout_layers[-1].negative_log_likelihood(self.y)
+        self.cost = self.dropout_layers[-1].training_cost(self.y)
+ 
+        # these is the non-dropout errors
+        self.errors = self.layers[-1].errors(self.y)
+ 
+    def __repr__(self):
+        return super(DropoutNet, self).__repr__() + "\n"\
+                + "dropout rates: " + str(self.dropout_rates)
+
+
+
 def add_fit_and_score(class_to_chg):
     """ Mutates a class to add the fit() and score() functions to a NeuralNet.
     """
