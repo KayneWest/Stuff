@@ -704,6 +704,250 @@ class ConvNet(object):
             return [score(batch_x, batch_y) for batch_x, batch_y in given_set]
  
         return scoref 
+
+
+class AlexNet(object):
+    """ Convolutional Neural network (not regularized, without dropout) """
+    def __init__(self, numpy_rng, theano_rng=None, 
+                 n_ins=40*7,#3
+                 layers_types=[ConvolutionalLayer,ConvolutionalLayer,ConvolutionalLayer,ConvolutionalLayer, Conv_to_ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[1024, 1024, 1024, 1024],
+                 n_outs=62 * 7, #3
+                 rho=0.9,
+                 eps=1.E-6,
+                 max_norm=0.,
+                 debugprint=False):
+        """
+        Basic feedforward convolutional neural network.
+        """
+        self.layers = []
+        self.params = []
+        self.n_layers = len(layers_types)
+        self.layers_types = layers_types
+        assert self.n_layers > 0
+        self.max_norm = max_norm
+        self._rho = rho  # "momentum" for adadelta
+        self._eps = eps  # epsilon for adadelta
+        self._accugrads = []  # for adadelta
+        self._accudeltas = []  # for adadelta
+ 
+        if theano_rng == None:
+            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
+ 
+        self.x = T.fmatrix('x')
+        self.y = T.ivector('y')
+        
+        self.layers_ins = [n_ins] + layers_sizes
+        self.layers_outs = layers_sizes + [n_outs]
+        
+        layer_input = self.x
+        
+        
+        
+        #change these for each conv layer, and specify params
+        batch_size = 20
+        image_shape1=(batch_size, 1, 28, 28),
+        filter_shape1=(20, 1, 5, 5)
+        
+        image_shape2=(batch_size, 20, 12, 12),
+        filter_shape2=(50, 20, 5, 5)
+        
+        
+        
+        for layer_type, n_in, n_out in zip(layers_types,
+                self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions,
+           if layertype==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop
+            this_layer = layer_type(rng=numpy_rng,
+                    input=layer_input, filter_shape1, image_shape2, poolsize=(2, 2))
+            assert hasattr(this_layer, 'output')
+            self.params.extend(this_layer.params)
+            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+                'accugrad') for t in this_layer.params])
+            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+                'accudelta') for t in this_layer.params])
+ 
+            self.layers.append(this_layer)
+            layer_input = this_layer.output
+           elif layertype==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
+            this_layer = layer_type(rng=numpy_rng,
+                    input=layer_input, filter_shape2, image_shape2, poolsize=(2, 2))
+            assert hasattr(this_layer, 'output')
+            self.params.extend(this_layer.params)
+            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+                'accugrad') for t in this_layer.params])
+            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+                'accudelta') for t in this_layer.params])
+ 
+            self.layers.append(this_layer)
+            layer_input = this_layer.output
+           else: 
+            this_layer = layer_type(rng=numpy_rng,
+                    input=layer_input, n_in=n_in, n_out=n_out)
+            assert hasattr(this_layer, 'output')
+            self.params.extend(this_layer.params)
+            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+                'accugrad') for t in this_layer.params])
+            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+                'accudelta') for t in this_layer.params])
+ 
+            self.layers.append(this_layer)
+            layer_input = this_layer.output
+        
+        #for layer_type, n_in, n_out in zip(layers_types,
+                #self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions
+            #this_layer = layer_type(rng=numpy_rng,
+                    #input=layer_input, n_in=n_in, n_out=n_out)
+            #assert hasattr(this_layer, 'output')
+            #self.params.extend(this_layer.params)
+            #self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+                #'accugrad') for t in this_layer.params])
+            #self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+                #'accudelta') for t in this_layer.params])
+ 
+            #self.layers.append(this_layer)
+            #layer_input = this_layer.output
+ 
+        assert hasattr(self.layers[-1], 'training_cost')
+        assert hasattr(self.layers[-1], 'errors')
+        # TODO standardize cost
+        self.mean_cost = self.layers[-1].negative_log_likelihood(self.y)
+        self.cost = self.layers[-1].training_cost(self.y)
+        if debugprint:
+            theano.printing.debugprint(self.cost)
+ 
+        self.errors = self.layers[-1].errors(self.y)
+ 
+    def __repr__(self):
+        dimensions_layers_str = map(lambda x: "x".join(map(str, x)),
+                                    zip(self.layers_ins, self.layers_outs))
+        return "_".join(map(lambda x: "_".join((x[0].__name__, x[1])),
+                            zip(self.layers_types, dimensions_layers_str)))
+ 
+ 
+    def get_SGD_trainer(self):
+        """ Returns a plain SGD minibatch trainer with learning rate as param.
+        """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        learning_rate = T.fscalar('lr')  # learning rate to use
+        # compute the gradients with respect to the model parameters
+        # using mean_cost so that the learning rate is not too dependent
+        # on the batch size
+        gparams = T.grad(self.mean_cost, self.params)
+ 
+        # compute list of weights updates
+        updates = OrderedDict()
+        for param, gparam in zip(self.params, gparams):
+            if self.max_norm:
+                W = param - gparam * learning_rate
+                col_norms = W.norm(2, axis=0)
+                desired_norms = T.clip(col_norms, 0, self.max_norm)
+                updates[param] = W * (desired_norms / (1e-6 + col_norms))
+            else:
+                updates[param] = param - gparam * learning_rate
+ 
+        train_fn = theano.function(inputs=[theano.Param(batch_x),
+                                           theano.Param(batch_y),
+                                           theano.Param(learning_rate)],
+                                   outputs=self.mean_cost,
+                                   updates=updates,
+                                   givens={self.x: batch_x, self.y: batch_y})
+ 
+        return train_fn
+ 
+ 
+    def get_adagrad_trainer(self):
+        """ Returns an Adagrad (Duchi et al. 2010) trainer using a learning rate.
+        """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        learning_rate = T.fscalar('lr')  # learning rate to use
+        # compute the gradients with respect to the model parameters
+        gparams = T.grad(self.mean_cost, self.params)
+ 
+        # compute list of weights updates
+        updates = OrderedDict()
+        for accugrad, param, gparam in zip(self._accugrads, self.params, gparams):
+            # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
+            agrad = accugrad + gparam * gparam
+            dx = - (learning_rate / T.sqrt(agrad + self._eps)) * gparam
+            if self.max_norm:
+                W = param + dx
+                col_norms = W.norm(2, axis=0)
+                desired_norms = T.clip(col_norms, 0, self.max_norm)
+                updates[param] = W * (desired_norms / (1e-6 + col_norms))
+            else:
+                updates[param] = param + dx
+            updates[accugrad] = agrad
+ 
+        train_fn = theano.function(inputs=[theano.Param(batch_x), 
+            theano.Param(batch_y),
+            theano.Param(learning_rate)],
+            outputs=self.mean_cost,
+            updates=updates,
+            givens={self.x: batch_x, self.y: batch_y})
+ 
+        return train_fn
+ 
+    def get_adadelta_trainer(self):
+        """ Returns an Adadelta (Zeiler 2012) trainer using self._rho and
+        self._eps params.
+        """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        # compute the gradients with respect to the model parameters
+        gparams = T.grad(self.mean_cost, self.params)
+ 
+        # compute list of weights updates
+        updates = OrderedDict()
+        for accugrad, accudelta, param, gparam in zip(self._accugrads,
+                self._accudeltas, self.params, gparams):
+            # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
+            agrad = self._rho * accugrad + (1 - self._rho) * gparam * gparam
+            dx = - T.sqrt((accudelta + self._eps)
+                          / (agrad + self._eps)) * gparam
+            updates[accudelta] = (self._rho * accudelta
+                                  + (1 - self._rho) * dx * dx)
+            if self.max_norm:
+                W = param + dx
+                col_norms = W.norm(2, axis=0)
+                desired_norms = T.clip(col_norms, 0, self.max_norm)
+                updates[param] = W * (desired_norms / (1e-6 + col_norms))
+            else:
+                updates[param] = param + dx
+            updates[accugrad] = agrad
+ 
+        train_fn = theano.function(inputs=[theano.Param(batch_x),
+                                           theano.Param(batch_y)],
+                                   outputs=self.mean_cost,
+                                   updates=updates,
+                                   givens={self.x: batch_x, self.y: batch_y})
+ 
+        return train_fn
+ 
+    def score_classif(self, given_set):
+        """ Returns functions to get current classification errors. """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        score = theano.function(inputs=[theano.Param(batch_x),
+                                        theano.Param(batch_y)],
+                                outputs=self.errors,
+                                givens={self.x: batch_x, self.y: batch_y})
+ 
+        def scoref():
+            """ returned function that scans the entire set given as input """
+            return [score(batch_x, batch_y) for batch_x, batch_y in given_set]
+ 
+        return scoref
+
+
+
+
+
+
+
+
+
  
  
 class RegularizedNet(NeuralNet):
