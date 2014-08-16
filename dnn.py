@@ -523,7 +523,7 @@ class NeuralNet(object):
  
  
 class ConvNet(object):
-    """ Neural network (not regularized, without dropout) """
+    """ Convolutional Neural network (not regularized, without dropout) """
     def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*3,
                  layers_types=[ConvolutionalLayer, Conv_to_ReLU, ReLU, ReLU, LogisticRegression],
@@ -534,7 +534,7 @@ class ConvNet(object):
                  max_norm=0.,
                  debugprint=False):
         """
-        Basic feedforward neural network.
+        Basic feedforward convolutional neural network.
         """
         self.layers = []
         self.params = []
@@ -739,7 +739,7 @@ class RegularizedNet(NeuralNet):
 
 
 class RegularizedConvNet(ConvNet):
-    """ Neural net with L1 and L2 regularization """
+    """ Convolutional Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=100,
                  layers_types=[ReLU, ReLU, ReLU, LogisticRegression],
@@ -754,7 +754,7 @@ class RegularizedConvNet(ConvNet):
         """
         Feedforward neural network with added L1 and/or L2 regularization.
         """
-        super(RegularizedNet, self).__init__(numpy_rng, theano_rng, n_ins,
+        super(RegularizedConvNet, self).__init__(numpy_rng, theano_rng, n_ins,
                 layers_types, layers_sizes, n_outs, rho, eps, max_norm,
                 debugprint)
  
@@ -840,7 +840,7 @@ class DropoutNet(NeuralNet):
  
 
 class DropoutConvNet(ConvNet):
-    """ Neural net with dropout (see Hinton's et al. paper) """
+    """ Convolutional Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=40*3,
                  layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
@@ -853,9 +853,9 @@ class DropoutConvNet(ConvNet):
                  fast_drop=False,
                  debugprint=False):
         """
-        Feedforward neural network with dropout regularization.
+        Feedforward convolutional neural network with dropout regularization.
         """
-        super(DropoutNet, self).__init__(numpy_rng, theano_rng, n_ins,
+        super(DropoutConvNet, self).__init__(numpy_rng, theano_rng, n_ins,
                 layers_types, layers_sizes, n_outs, rho, eps, max_norm,
                 debugprint)
  
