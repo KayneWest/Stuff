@@ -756,7 +756,8 @@ class AlexNet(object):
         
         for layer_type, n_in, n_out in zip(layers_types,
                 self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions,
-           if layertype==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop
+           if layertype==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
+           #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
             this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, filter_shape1, image_shape2, poolsize=(2, 2))
             assert hasattr(this_layer, 'output')
