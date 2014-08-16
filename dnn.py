@@ -696,7 +696,9 @@ class AlexNet(object):
         self.layers_outs = layers_sizes + [n_outs]
         
         layer_input = self.x
-        
+        # Reshape matrix of rasterized images of shape (batch_size,28*28)
+        # to a 4D tensor, compatible with our LeNetConvPoolLayer
+        conv_layer_input=self.x.reshape((batch_size,1,28,28)) #change later params
         
         
         #change these for each conv layer, and specify params
@@ -712,38 +714,38 @@ class AlexNet(object):
         for layer_type, n_in, n_out in zip(layers_types,
                 self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions,
            if layertype==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
-           #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
-            this_layer = layer_type(rng=numpy_rng,
+               #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
+               this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, filter_shape1, image_shape2, poolsize=(2, 2))
-            assert hasattr(this_layer, 'output')
-            self.params.extend(this_layer.params)
-            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+               assert hasattr(this_layer, 'output')
+               self.params.extend(this_layer.params)
+               self._accugrads.extend([build_shared_zeros(t.shape.eval(),
                 'accugrad') for t in this_layer.params])
-            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
-                'accudelta') for t in this_layer.params])
+               self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+               'accudelta') for t in this_layer.params])
  
-            self.layers.append(this_layer)
-            layer_input = this_layer.output
+               self.layers.append(this_layer)
+               layer_input = this_layer.output
            elif layertype==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
-            this_layer = layer_type(rng=numpy_rng,
+               this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, filter_shape2, image_shape2, poolsize=(2, 2))
-            assert hasattr(this_layer, 'output')
-            self.params.extend(this_layer.params)
-            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
-                'accugrad') for t in this_layer.params])
-            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+               assert hasattr(this_layer, 'output')
+               self.params.extend(this_layer.params)
+               self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+                 'accugrad') for t in this_layer.params])
+               self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
                 'accudelta') for t in this_layer.params])
  
-            self.layers.append(this_layer)
-            layer_input = this_layer.output
+               self.layers.append(this_layer)
+               layer_input = this_layer.output
            else: 
-            this_layer = layer_type(rng=numpy_rng,
+               this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, n_in=n_in, n_out=n_out)
-            assert hasattr(this_layer, 'output')
-            self.params.extend(this_layer.params)
-            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+               assert hasattr(this_layer, 'output')
+               self.params.extend(this_layer.params)
+               self._accugrads.extend([build_shared_zeros(t.shape.eval(),
                 'accugrad') for t in this_layer.params])
-            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+               self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
                 'accudelta') for t in this_layer.params])
  
             self.layers.append(this_layer)
