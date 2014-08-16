@@ -224,7 +224,7 @@ class ConvolutionalLayer(object):
         # store parameters of this layer
         self.params = [self.W, self.b]
     def __repr__(self):
-        return "ConvolutionalLayer"
+        return "ConvolutionalLayer" #might have to change this
 
 #ConvolutionalLayer(rng, input=layer0_input, image_shape=(batch_size, 1, 28, 28),filter_shape=(20, 1, 5, 5), poolsize=(2, 2))
 #layer2_input = layer1.output.flatten(2)
