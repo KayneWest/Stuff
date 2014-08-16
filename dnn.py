@@ -118,7 +118,7 @@ class Linear(object):
 # dictionary by automatically looping over all (params[i],grads[i])  pairs.
 ##updates = []
 ##for param_i, grad_i in zip(params, grads):
-    updates.append((param_i, param_i - learning_rate * grad_i))
+    ##updates.append((param_i, param_i - learning_rate * grad_i))
 ##train_model = theano.function([index], cost, updates = updates,
         ##givens={
             ##x: train_set_x[index * batch_size: (index + 1) * batch_size],
