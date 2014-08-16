@@ -223,7 +223,8 @@ class ConvolutionalLayer(object):
 
         # store parameters of this layer
         self.params = [self.W, self.b]
-
+    def __repr__(self):
+        return "ConvolutionalLayer"
 
 #ConvolutionalLayer(rng, input=layer0_input, image_shape=(batch_size, 1, 28, 28),filter_shape=(20, 1, 5, 5), poolsize=(2, 2))
 #layer2_input = layer1.output.flatten(2)
@@ -242,7 +243,7 @@ class Conv_to_SigmoidLayer(ConvolutionalLayer):
     """ Sigmoid activation layer (sigmoid(W.X + b)) """
     def __init__(self, rng, input, filter_shape, image_shape, poolsize=(2, 2)):
         super(SigmoidLayer, self).__init__(rng, input, n_in, n_out, W, b)
-        self.pre_activation = self.output
+        self.pre_activation = self.output.flatten(2)
         if fdrop:
             self.pre_activation = fast_dropout(rng, self.pre_activation)
         self.output = T.nnet.sigmoid(self.pre_activation) 
@@ -266,7 +267,7 @@ class Conv_to_ReLU(ConvolutionalLayer):
         #if b is None:
             #b = build_shared_zeros((n_out,), 'b')
         super(ReLU, self).__init__(rng, input, n_in, n_out, W, b)
-        self.pre_activation = self.output
+        self.pre_activation = self.output.flatten(2)
         if fdrop:
             self.pre_activation = fast_dropout(rng, self.pre_activation)
         self.output = relu_f(self.pre_activation)
