@@ -698,46 +698,44 @@ class AlexNet(object):
         layer_input = self.x
         # Reshape matrix of rasterized images of shape (batch_size,28*28)
         # to a 4D tensor, compatible with our LeNetConvPoolLayer
-        conv_layer_input=self.x.reshape((batch_size,1,28,28)) #change later params
+        conv_layer_input=layer_input.reshape((batch_size,1,28,28)) #change later params
         
         
         #change these for each conv layer, and specify params
-        batch_size = 20
-        image_shape1=(batch_size, 1, 28, 28),
-        filter_shape1=(20, 1, 5, 5)
+        self.batch_size = 20
+        image_shape1=(self.batch_size, 1, 28, 28),
+        self.filter_shape1=(20, 1, 5, 5)
         
-        image_shape2=(batch_size, 20, 12, 12),
-        filter_shape2=(50, 20, 5, 5)
-        
+        image_shape2=(self.batch_size, 20, 12, 12),
+        self.filter_shape2=(50, 20, 5, 5)
+        self.poolsize=(2, 2)
         
         
         for layer_type, n_in, n_out in zip(layers_types,
-                self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions,
+                self.layers_ins, self.layers_outs):
            if layertype==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
                #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
                this_layer = layer_type(rng=numpy_rng,
-                    input=layer_input, filter_shape1, image_shape2, poolsize=(2, 2))
+                    input=conv_layer_input, self.filter_shape1, image_shape1, poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
                 'accugrad') for t in this_layer.params])
                self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
                'accudelta') for t in this_layer.params])
- 
                self.layers.append(this_layer)
                layer_input = this_layer.output
            elif layertype==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
                this_layer = layer_type(rng=numpy_rng,
-                    input=layer_input, filter_shape2, image_shape2, poolsize=(2, 2))
+                    input=layer_input, self.filter_shape2, image_shape2, poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
                  'accugrad') for t in this_layer.params])
                self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
                 'accudelta') for t in this_layer.params])
- 
                self.layers.append(this_layer)
-               layer_input = this_layer.output
+               layer_input = this_layer.output.flatten(2) # NECESSARY TO IMPORT TO OTHER FORMAT
            else: 
                this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, n_in=n_in, n_out=n_out)
@@ -747,28 +745,35 @@ class AlexNet(object):
                 'accugrad') for t in this_layer.params])
                self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
                 'accudelta') for t in this_layer.params])
- 
-            self.layers.append(this_layer)
-            layer_input = this_layer.output
-        
-        #for layer_type, n_in, n_out in zip(layers_types,
-                #self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions
-            #this_layer = layer_type(rng=numpy_rng,
-                    #input=layer_input, n_in=n_in, n_out=n_out)
-            #assert hasattr(this_layer, 'output')
-            #self.params.extend(this_layer.params)
-            #self._accugrads.extend([build_shared_zeros(t.shape.eval(),
-                #'accugrad') for t in this_layer.params])
-            #self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
-                #'accudelta') for t in this_layer.params])
- 
-            #self.layers.append(this_layer)
-            #layer_input = this_layer.output
+               self.layers.append(this_layer)
+               layer_input = this_layer.output
  
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
         # TODO standardize cost
-        self.mean_cost = self.layers[-1].negative_log_likelihood(self.y)
+        ##### error = T.mean(T.nnet.binary_crossentropy(input, self.target_var))####
+        ####
+        ##class CrossEntropyCost:
+            ##@staticmethod
+            ##def fn(a, y):
+           ## """Return the cost associated with an output ``a`` and desired output
+           ## ``y``.  Note that np.nan_to_num is used to ensure numerical
+           ## stability.  In particular, if both ``a`` and ``y`` have a 1.0
+           ## in the same slot, then the expression (1-y)*np.log(1-a)
+           ## returns nan.  The np.nan_to_num ensures that that is converted
+           ## to the correct value (0.0)."""
+           ## return np.nan_to_num(np.sum(-y*np.log(a)-(1-y)*np.log(1-a)))
+
+        ##@staticmethod
+        ##def delta(z, a, y):
+           ##"""Return the error delta from the output layer.  Note that the
+           ## parameter ``z`` is not used by the method.  It is included in
+           ## the method's parameters in order to make the interface
+           ##consistent with the delta method for other cost classes."""
+           ##return (a-y)
+        ##### error = T.mean(T.nnet.binary_crossentropy(input, self.target_var))####
+        
+        self.mean_cost = self.layers[-1].negative_log_likelihood(self.y) #TODO CHANGE THE COST TO CROSS ENTROPY
         self.cost = self.layers[-1].training_cost(self.y)
         if debugprint:
             theano.printing.debugprint(self.cost)
