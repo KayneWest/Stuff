@@ -522,6 +522,7 @@ class AlexNet(object):
         self.batch_size = 20
         self.poolsize=(2, 2)
         
+        ###THIS IS FOR THE MNIST DATASET### 
         # Construct the first convolutional pooling layer:
         # filtering reduces the image size to (28-5+1,28-5+1)=(24,24)
         # maxpooling reduces this further to (24/2,24/2) = (12,12)
