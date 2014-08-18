@@ -475,198 +475,15 @@ class NeuralNet(object):
             return [score(batch_x, batch_y) for batch_x, batch_y in given_set]
  
         return scoref
- 
- 
-class ConvNet(object):
-    """ Convolutional Neural network (not regularized, without dropout) """
-    def __init__(self, numpy_rng, theano_rng=None, 
-                 n_ins=40*3,
-                 layers_types=[ConvolutionalLayer, Conv_to_ReLU, ReLU, ReLU, LogisticRegression],
-                 layers_sizes=[1024, 1024, 1024, 1024],
-                 n_outs=62 * 3,
-                 rho=0.9,
-                 eps=1.E-6,
-                 max_norm=0.,
-                 debugprint=False):
-        """
-        Basic feedforward convolutional neural network.
-        """
-        self.layers = []
-        self.params = []
-        self.n_layers = len(layers_types)
-        self.layers_types = layers_types
-        assert self.n_layers > 0
-        self.max_norm = max_norm
-        self._rho = rho  # "momentum" for adadelta
-        self._eps = eps  # epsilon for adadelta
-        self._accugrads = []  # for adadelta
-        self._accudeltas = []  # for adadelta
- 
-        if theano_rng == None:
-            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
- 
-        self.x = T.fmatrix('x')
-        self.y = T.ivector('y')
-        
-        self.layers_ins = [n_ins] + layers_sizes
-        self.layers_outs = layers_sizes + [n_outs]
-        
-        layer_input = self.x
-        
-        for layer_type, n_in, n_out in zip(layers_types,
-                self.layers_ins, self.layers_outs): #this is where I need to start making changes to adopt convolutions
-            this_layer = layer_type(rng=numpy_rng,
-                    input=layer_input, n_in=n_in, n_out=n_out)
-            assert hasattr(this_layer, 'output')
-            self.params.extend(this_layer.params)
-            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
-                'accugrad') for t in this_layer.params])
-            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
-                'accudelta') for t in this_layer.params])
- 
-            self.layers.append(this_layer)
-            layer_input = this_layer.output
- 
-        assert hasattr(self.layers[-1], 'training_cost')
-        assert hasattr(self.layers[-1], 'errors')
-        # TODO standardize cost
-        self.mean_cost = self.layers[-1].negative_log_likelihood(self.y)
-        self.cost = self.layers[-1].training_cost(self.y)
-        if debugprint:
-            theano.printing.debugprint(self.cost)
- 
-        self.errors = self.layers[-1].errors(self.y)
- 
-    def __repr__(self):
-        dimensions_layers_str = map(lambda x: "x".join(map(str, x)),
-                                    zip(self.layers_ins, self.layers_outs))
-        return "_".join(map(lambda x: "_".join((x[0].__name__, x[1])),
-                            zip(self.layers_types, dimensions_layers_str)))
- 
- 
-    def get_SGD_trainer(self):
-        """ Returns a plain SGD minibatch trainer with learning rate as param.
-        """
-        batch_x = T.fmatrix('batch_x')
-        batch_y = T.ivector('batch_y')
-        learning_rate = T.fscalar('lr')  # learning rate to use
-        # compute the gradients with respect to the model parameters
-        # using mean_cost so that the learning rate is not too dependent
-        # on the batch size
-        gparams = T.grad(self.mean_cost, self.params)
- 
-        # compute list of weights updates
-        updates = OrderedDict()
-        for param, gparam in zip(self.params, gparams):
-            if self.max_norm:
-                W = param - gparam * learning_rate
-                col_norms = W.norm(2, axis=0)
-                desired_norms = T.clip(col_norms, 0, self.max_norm)
-                updates[param] = W * (desired_norms / (1e-6 + col_norms))
-            else:
-                updates[param] = param - gparam * learning_rate
- 
-        train_fn = theano.function(inputs=[theano.Param(batch_x),
-                                           theano.Param(batch_y),
-                                           theano.Param(learning_rate)],
-                                   outputs=self.mean_cost,
-                                   updates=updates,
-                                   givens={self.x: batch_x, self.y: batch_y})
- 
-        return train_fn
- 
- 
-    def get_adagrad_trainer(self):
-        """ Returns an Adagrad (Duchi et al. 2010) trainer using a learning rate.
-        """
-        batch_x = T.fmatrix('batch_x')
-        batch_y = T.ivector('batch_y')
-        learning_rate = T.fscalar('lr')  # learning rate to use
-        # compute the gradients with respect to the model parameters
-        gparams = T.grad(self.mean_cost, self.params)
- 
-        # compute list of weights updates
-        updates = OrderedDict()
-        for accugrad, param, gparam in zip(self._accugrads, self.params, gparams):
-            # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
-            agrad = accugrad + gparam * gparam
-            dx = - (learning_rate / T.sqrt(agrad + self._eps)) * gparam
-            if self.max_norm:
-                W = param + dx
-                col_norms = W.norm(2, axis=0)
-                desired_norms = T.clip(col_norms, 0, self.max_norm)
-                updates[param] = W * (desired_norms / (1e-6 + col_norms))
-            else:
-                updates[param] = param + dx
-            updates[accugrad] = agrad
- 
-        train_fn = theano.function(inputs=[theano.Param(batch_x), 
-            theano.Param(batch_y),
-            theano.Param(learning_rate)],
-            outputs=self.mean_cost,
-            updates=updates,
-            givens={self.x: batch_x, self.y: batch_y})
- 
-        return train_fn
- 
-    def get_adadelta_trainer(self):
-        """ Returns an Adadelta (Zeiler 2012) trainer using self._rho and
-        self._eps params.
-        """
-        batch_x = T.fmatrix('batch_x')
-        batch_y = T.ivector('batch_y')
-        # compute the gradients with respect to the model parameters
-        gparams = T.grad(self.mean_cost, self.params)
- 
-        # compute list of weights updates
-        updates = OrderedDict()
-        for accugrad, accudelta, param, gparam in zip(self._accugrads,
-                self._accudeltas, self.params, gparams):
-            # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
-            agrad = self._rho * accugrad + (1 - self._rho) * gparam * gparam
-            dx = - T.sqrt((accudelta + self._eps)
-                          / (agrad + self._eps)) * gparam
-            updates[accudelta] = (self._rho * accudelta
-                                  + (1 - self._rho) * dx * dx)
-            if self.max_norm:
-                W = param + dx
-                col_norms = W.norm(2, axis=0)
-                desired_norms = T.clip(col_norms, 0, self.max_norm)
-                updates[param] = W * (desired_norms / (1e-6 + col_norms))
-            else:
-                updates[param] = param + dx
-            updates[accugrad] = agrad
- 
-        train_fn = theano.function(inputs=[theano.Param(batch_x),
-                                           theano.Param(batch_y)],
-                                   outputs=self.mean_cost,
-                                   updates=updates,
-                                   givens={self.x: batch_x, self.y: batch_y})
- 
-        return train_fn
- 
-    def score_classif(self, given_set):
-        """ Returns functions to get current classification errors. """
-        batch_x = T.fmatrix('batch_x')
-        batch_y = T.ivector('batch_y')
-        score = theano.function(inputs=[theano.Param(batch_x),
-                                        theano.Param(batch_y)],
-                                outputs=self.errors,
-                                givens={self.x: batch_x, self.y: batch_y})
- 
-        def scoref():
-            """ returned function that scans the entire set given as input """
-            return [score(batch_x, batch_y) for batch_x, batch_y in given_set]
- 
-        return scoref 
 
 
 class AlexNet(object):
     """ Convolutional Neural network (not regularized, without dropout) """
     def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*7,#3
-                 layers_types=[ConvolutionalLayer,ConvolutionalLayer,ConvolutionalLayer,ConvolutionalLayer, Conv_to_ReLU, ReLU, ReLU, LogisticRegression],
-                 layers_sizes=[1024, 1024, 1024, 1024],
+                 # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
+                 layers_types=[ConvolutionalLayer,ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[1024, 1024, 1024, 1024, 1024], #play with these sizes
                  n_outs=62 * 7, #3
                  rho=0.9,
                  eps=1.E-6,
@@ -703,13 +520,25 @@ class AlexNet(object):
         
         #change these for each conv layer, and specify params
         self.batch_size = 20
-        image_shape1=(self.batch_size, 1, 28, 28),
-        self.filter_shape1=(20, 1, 5, 5)
-        
-        image_shape2=(self.batch_size, 20, 12, 12),
-        self.filter_shape2=(50, 20, 5, 5)
         self.poolsize=(2, 2)
         
+        # Construct the first convolutional pooling layer:
+        # filtering reduces the image size to (28-5+1,28-5+1)=(24,24)
+        # maxpooling reduces this further to (24/2,24/2) = (12,12)
+        # 4D output tensor is thus of shape (20,20,12,12)
+        image_shape1=(self.batch_size, 1, 28, 28),
+        self.filter_shape1=(20, 1, 5, 5)
+        # Construct the second convolutional pooling layer
+        # filtering reduces the image size to (12 - 5 + 1, 12 - 5 + 1)=(8, 8)
+        # maxpooling reduces this further to (8/2,8/2) = (4, 4)
+        # 4D output tensor is thus of shape (20,50,4,4)
+        image_shape2=(self.batch_size, 20, 12, 12),
+        self.filter_shape2=(50, 20, 5, 5)
+        # the non-convolutional layers being fully-connected, it operates on 2D matrices of
+        # shape (batch_size,num_pixels) (i.e matrix of rasterized images).
+        # This will generate a matrix of shape (20, 32 * 4 * 4) = (20, 512)
+        #relu_input = convolutional.output.flatten(2)
+        # n_in=50 * 4 * 4, # 4D output tensor is thus of shape (20,#50,#4,#4)
         
         for layer_type, n_in, n_out in zip(layers_types,
                 self.layers_ins, self.layers_outs):
@@ -720,9 +549,9 @@ class AlexNet(object):
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
-                'accugrad') for t in this_layer.params])
+                   'accugrad') for t in this_layer.params])
                self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
-               'accudelta') for t in this_layer.params])
+                   'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output
            elif layertype==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
@@ -731,9 +560,9 @@ class AlexNet(object):
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
-                 'accugrad') for t in this_layer.params])
+                   'accugrad') for t in this_layer.params])
                self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
-                'accudelta') for t in this_layer.params])
+                   'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output.flatten(2) # NECESSARY TO IMPORT TO OTHER FORMAT
            else: 
@@ -742,9 +571,9 @@ class AlexNet(object):
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
-                'accugrad') for t in this_layer.params])
+                   'accugrad') for t in this_layer.params])
                self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
-                'accudelta') for t in this_layer.params])
+                   'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output
  
@@ -905,14 +734,6 @@ class AlexNet(object):
 
 
 
-
-
-
-
-
-
- 
- 
 class RegularizedNet(NeuralNet):
     """ Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
@@ -945,12 +766,12 @@ class RegularizedNet(NeuralNet):
             self.cost = self.cost + L2_reg * L2
 
 
-class RegularizedConvNet(ConvNet):
+class RegularizedConvNet(AlexNet):
     """ Convolutional Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=100,
-                 layers_types=[ReLU, ReLU, ReLU, LogisticRegression],
-                 layers_sizes=[1024, 1024, 1024],
+                 layers_types=[ConvolutionalLayer,ConvolutionalLayer,ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[1024, 1024, 1024, 1024, 1024],
                  n_outs=2,
                  rho=0.9,
                  eps=1.E-6,
@@ -1046,13 +867,13 @@ class DropoutNet(NeuralNet):
                 + "dropout rates: " + str(self.dropout_rates)
  
 
-class DropoutConvNet(ConvNet):
+class DropoutConvNet(AlexNet):
     """ Convolutional Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=40*3,
-                 layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
-                 layers_sizes=[4000, 4000, 4000, 4000],
-                 dropout_rates=[0.0, 0.5, 0.5, 0.5, 0.5],
+                 layers_types=[ConvolutionalLayer, ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[4000, 4000, 4000, 4000, 4000, 4000],
+                 dropout_rates=[0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
                  n_outs=62 * 3,
                  rho=0.9,
                  eps=1.E-6,
