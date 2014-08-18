@@ -312,14 +312,14 @@ class LogisticRegression_crossentropy:
         self.output = self.y_pred
         self.params = [self.W, self.b]
  
-    def cross_entropy(self, y):
+    def cross_entropy(self, y): #TODO enure that this isn't categorical cross_entropy
         return T.mean(T.nnet.binary_crossentropy(self.p_y_given_x, y)) 
  
     def negative_log_likelihood(self, y):
         return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
         #return T.mean(T.nnet.binary_crossentropy(self.p_y_given_x, y))
 
-    def cross_entropy_sum(self, y):
+    def cross_entropy_sum(self, y): #TODO enure that this isn't categorical cross_entropy
         return T.sum(T.nnet.binary_crossentropy(self.p_y_given_x, y)) 
  
     def negative_log_likelihood_sum(self, y):
