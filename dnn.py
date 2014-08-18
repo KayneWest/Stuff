@@ -542,7 +542,7 @@ class AlexNet(object):
         
         for layer_type, n_in, n_out in zip(layers_types,
                 self.layers_ins, self.layers_outs):
-           if layertype==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
+           if layer_type==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
                #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
                this_layer = layer_type(rng=numpy_rng,
                     input=conv_layer_input, self.filter_shape1, image_shape1, poolsize=self.poolsize)
@@ -554,7 +554,7 @@ class AlexNet(object):
                    'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output
-           elif layertype==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
+           elif layer_type==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
                this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, self.filter_shape2, image_shape2, poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
@@ -867,14 +867,14 @@ class DropoutNet(NeuralNet):
                 + "dropout rates: " + str(self.dropout_rates)
  
 
-class DropoutConvNet(AlexNet):
+class DropoutAlexNet(AlexNet):
     """ Convolutional Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
-                 n_ins=40*3,
+                 n_ins=40*7,#3
                  layers_types=[ConvolutionalLayer, ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],
                  layers_sizes=[4000, 4000, 4000, 4000, 4000, 4000],
-                 dropout_rates=[0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-                 n_outs=62 * 3,
+                 dropout_rates=[0.0, 0.5, 0.5, 0.5],
+                 n_outs=62 * 7,#3
                  rho=0.9,
                  eps=1.E-6,
                  max_norm=0.,
@@ -883,7 +883,7 @@ class DropoutConvNet(AlexNet):
         """
         Feedforward convolutional neural network with dropout regularization.
         """
-        super(DropoutConvNet, self).__init__(numpy_rng, theano_rng, n_ins,
+        super(DropoutAlexNet, self).__init__(numpy_rng, theano_rng, n_ins,
                 layers_types, layers_sizes, n_outs, rho, eps, max_norm,
                 debugprint)
  
@@ -899,13 +899,16 @@ class DropoutConvNet(AlexNet):
  
         for layer, layer_type, n_in, n_out, dr in zip(self.layers,
                 layers_types, self.layers_ins, self.layers_outs,
-                dropout_rates[1:] + [0]):  # !!! we do not dropout anything
-                                           # from the last layer !!!
+                [0]+[0]+dropout_rates[1:] + [0]):  # !!! we do not dropout anything
+                                           # from the last layer OR THE CONV LAYER !!!
             if dr:
                 if fast_drop:
                     this_layer = layer_type(rng=numpy_rng,
                             input=dropout_layer_input, n_in=n_in, n_out=n_out,
                             W=layer.W, b=layer.b, fdrop=True)
+                    assert hasattr(this_layer, 'output')
+                    self.dropout_layers.append(this_layer)
+                    dropout_layer_input = this_layer.output
                 else:
                     this_layer = layer_type(rng=numpy_rng,
                             input=dropout_layer_input, n_in=n_in, n_out=n_out,
@@ -913,14 +916,31 @@ class DropoutConvNet(AlexNet):
                             b=layer.b * 1. / (1. - dr))
                     # N.B. dropout with dr==1 does not dropanything!!
                     this_layer.output = dropout(numpy_rng, this_layer.output, dr)
+                    assert hasattr(this_layer, 'output')
+                    self.dropout_layers.append(this_layer)
+                    dropout_layer_input = this_layer.output
+            elif layer_type==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
+               #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
+               this_layer = layer_type(rng=numpy_rng,
+                    input=conv_layer_input, self.filter_shape1, image_shape1, poolsize=self.poolsize)
+               assert hasattr(this_layer, 'output')
+               self.dropout_layers.append(this_layer)
+               layer_input = this_layer.output
+            elif layer_type==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
+               this_layer = layer_type(rng=numpy_rng,
+                    input=layer_input, self.filter_shape2, image_shape2, poolsize=self.poolsize)
+               assert hasattr(this_layer, 'output')
+               self.dropout_layers.append(this_layer)
+               dropout_layer_input = this_layer.output.flatten(2) #necessary flatten layer
+            
+            
             else:
                 this_layer = layer_type(rng=numpy_rng,
                         input=dropout_layer_input, n_in=n_in, n_out=n_out,
                         W=layer.W, b=layer.b)
- 
-            assert hasattr(this_layer, 'output')
-            self.dropout_layers.append(this_layer)
-            dropout_layer_input = this_layer.output
+                  assert hasattr(this_layer, 'output')
+                  self.dropout_layers.append(this_layer)
+                  dropout_layer_input = this_layer.output
  
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
