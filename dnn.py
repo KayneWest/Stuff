@@ -292,6 +292,58 @@ class LogisticRegression:
             print("!!! y should be of int type")
             return T.mean(T.neq(self.y_pred, numpy.asarray(y, dtype='int')))
  
+
+class LogisticRegression_crossentropy:
+    """Multi-class Logistic Regression
+    """
+    def __init__(self, rng, input, n_in, n_out, W=None, b=None):
+        if W != None:
+            self.W = W
+        else:
+            self.W = build_shared_zeros((n_in, n_out), 'W')
+        if b != None:
+            self.b = b
+        else:
+            self.b = build_shared_zeros((n_out,), 'b')
+ 
+        # P(Y|X) = softmax(W.X + b)
+        self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
+        self.y_pred = T.argmax(self.p_y_given_x, axis=1)
+        self.output = self.y_pred
+        self.params = [self.W, self.b]
+ 
+    def cross_entropy(self, y):
+        return T.mean(T.nnet.binary_crossentropy(self.p_y_given_x, y)) 
+ 
+    def negative_log_likelihood(self, y):
+        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #return T.mean(T.nnet.binary_crossentropy(self.p_y_given_x, y))
+
+    def cross_entropy_sum(self, y):
+        return T.sum(T.nnet.binary_crossentropy(self.p_y_given_x, y)) 
+ 
+    def negative_log_likelihood_sum(self, y):
+        return -T.sum(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+ 
+    def cross_entropy_training_cost(self, y):
+        """ Wrapper for standard name """
+        return self.cross_entropy_sum(y)
+ 
+    def training_cost(self, y):
+        """ Wrapper for standard name """
+        return self.negative_log_likelihood_sum(y)
+ 
+    def errors(self, y):
+        if y.ndim != self.y_pred.ndim:
+            raise TypeError("y should have the same shape as self.y_pred",
+                ("y", y.type, "y_pred", self.y_pred.type))
+        if y.dtype.startswith('int'):
+            return T.mean(T.neq(self.y_pred, y))
+        else:
+            print("!!! y should be of int type")
+            return T.mean(T.neq(self.y_pred, numpy.asarray(y, dtype='int')))
+
+
  
 class NeuralNet(object):
     """ Neural network (not regularized, without dropout) """
@@ -482,7 +534,7 @@ class AlexNet(object):
     def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*7,#3
                  # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
-                 layers_types=[ConvolutionalLayer,ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_types=[ConvolutionalLayer,ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[1024, 1024, 1024, 1024, 1024], #play with these sizes
                  n_outs=62 * 7, #3
                  rho=0.9,
@@ -603,8 +655,8 @@ class AlexNet(object):
            ##return (a-y)
         ##### error = T.mean(T.nnet.binary_crossentropy(input, self.target_var))####
         
-        self.mean_cost = self.layers[-1].negative_log_likelihood(self.y) #TODO CHANGE THE COST TO CROSS ENTROPY
-        self.cost = self.layers[-1].training_cost(self.y)
+        self.mean_cost = self.layers[-1].cross_entropy(self.y) #TODO CHANGE THE COST TO CROSS ENTROPY
+        self.cost = self.layers[-1].cross_entropy_training_cost(self.y)
         if debugprint:
             theano.printing.debugprint(self.cost)
  
