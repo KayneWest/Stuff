@@ -823,7 +823,7 @@ class RegularizedConvNet(AlexNet):
     """ Convolutional Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=100,
-                 layers_types=[ConvolutionalLayer,ConvolutionalLayer,ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_types=[ConvolutionalLayer,ConvolutionalLayer,ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[1024, 1024, 1024, 1024, 1024],
                  n_outs=2,
                  rho=0.9,
@@ -924,7 +924,7 @@ class DropoutAlexNet(AlexNet):
     """ Convolutional Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=40*7,#3
-                 layers_types=[ConvolutionalLayer, ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_types=[ConvolutionalLayer, ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[4000, 4000, 4000, 4000, 4000, 4000],
                  dropout_rates=[0.0, 0.5, 0.5, 0.5],
                  n_outs=62 * 7,#3
@@ -998,8 +998,8 @@ class DropoutAlexNet(AlexNet):
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
         # these are the dropout costs
-        self.mean_cost = self.dropout_layers[-1].negative_log_likelihood(self.y)
-        self.cost = self.dropout_layers[-1].training_cost(self.y)
+        self.mean_cost = self.dropout_layers[-1].cross_entropy(self.y)
+        self.cost = self.dropout_layers[-1].cross_entropy_training_cost(self.y)
  
         # these is the non-dropout errors
         self.errors = self.layers[-1].errors(self.y)
