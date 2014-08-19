@@ -152,7 +152,7 @@ def text_sections(im, output_height):
 
     edges = canny(im_array, 2, 1, 25)
 
-    lines = probabilistic_hough(edges, threshold=5, line_length=20,
+    lines = probabilistic_hough_line(edges, threshold=5, line_length=20,
                                 line_gap=20, theta=theta)
 
     lines_sorted = sorted(lines, cmp=cmp_lines)
@@ -169,7 +169,6 @@ if __name__ == '__main__':
     testfile = "data/hk.png"
     im_raw = Image.open(testfile)
     im_array = image_to_array(im_raw)
-if __name__ == '__main__':
     im = Image.open('data/hk_eng_crop_2.png')
     text_sections(im, 20)
     for t in text_sections(im, 20):
