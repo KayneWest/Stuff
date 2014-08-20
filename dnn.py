@@ -1,6 +1,13 @@
 """
 A deep neural network with or w/o dropout in one file.
 """
+
+
+
+#need to make sure to have better weight initialization:
+#        self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
+#        self.weights = [np.random.randn(y, x)/np.sqrt(x) 
+#                        for x, y in zip(self.sizes[:-1], self.sizes[1:])]
  
 import numpy, theano, sys, math
 from theano import tensor as T
@@ -180,6 +187,121 @@ class ConvolutionalLayer(object):
         self.params = [self.W, self.b]
     def __repr__(self):
         return "ConvolutionalLayer" #might have to change this
+        
+        
+class ConvolutionalLayer1(object):
+    """Convolutional Layer with pooling"""
+    def __init__(self, rng, input, filter_shape, image_shape, poolsize=(2, 2)):
+        """
+        Allocate a ConvolutionalLayer with shared variable internal parameters.
+
+        :type rng: numpy.random.RandomState
+        :param rng: a random number generator used to initialize weights
+
+        :type input: theano.tensor.dtensor4
+        :param input: symbolic image tensor, of shape image_shape
+
+        :type filter_shape: tuple or list of length 4
+        :param filter_shape: (number of filters, num input feature maps,
+                              filter height,filter width)
+
+        :type image_shape: tuple or list of length 4
+        :param image_shape: (batch size, num input feature maps,
+                             image height, image width)
+
+        :type poolsize: tuple or list of length 2
+        :param poolsize: the downsampling (pooling) factor (#rows,#cols)
+        """
+        assert image_shape[1] == filter_shape[1]
+        self.input = input
+
+        # initialize weight values: the fan-in of each hidden neuron is
+        # restricted by the size of the receptive fields.
+        fan_in =  numpy.prod(filter_shape[1:])
+        W_values = numpy.asarray(rng.uniform(
+              low=-numpy.sqrt(3./fan_in),
+              high=numpy.sqrt(3./fan_in),
+              size=filter_shape), dtype=theano.config.floatX)
+        self.W = theano.shared(value=W_values, name='W')
+
+        # the bias is a 1D tensor -- one bias per output feature map
+        b_values = numpy.zeros((filter_shape[0],), dtype=theano.config.floatX)
+        self.b = theano.shared(value=b_values, name='b')
+
+        # convolve input feature maps with filters
+        conv_out = conv.conv2d(input, self.W,
+                filter_shape=filter_shape, image_shape=image_shape)
+
+        # downsample each feature map individually, using maxpooling
+        pooled_out = downsample.max_pool_2d(conv_out, poolsize, ignore_border=True)
+
+        # add the bias term. Since the bias is a vector (1D array), we first
+        # reshape it to a tensor of shape (1, n_filters, 1, 1). Each bias will thus
+        # be broadcasted across mini-batches and feature map width & height
+        self.output = T.tanh(pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+
+        # store parameters of this layer
+        self.params = [self.W, self.b]
+    def __repr__(self):
+        return "ConvolutionalLayer" #might have to change this
+        
+        
+class ConvolutionalLayer2(object):
+    """Convolutional Layer with pooling"""
+    def __init__(self, rng, input, filter_shape, image_shape, poolsize=(2, 2)):
+        """
+        Allocate a ConvolutionalLayer with shared variable internal parameters.
+
+        :type rng: numpy.random.RandomState
+        :param rng: a random number generator used to initialize weights
+
+        :type input: theano.tensor.dtensor4
+        :param input: symbolic image tensor, of shape image_shape
+
+        :type filter_shape: tuple or list of length 4
+        :param filter_shape: (number of filters, num input feature maps,
+                              filter height,filter width)
+
+        :type image_shape: tuple or list of length 4
+        :param image_shape: (batch size, num input feature maps,
+                             image height, image width)
+
+        :type poolsize: tuple or list of length 2
+        :param poolsize: the downsampling (pooling) factor (#rows,#cols)
+        """
+        assert image_shape[1] == filter_shape[1]
+        self.input = input
+
+        # initialize weight values: the fan-in of each hidden neuron is
+        # restricted by the size of the receptive fields.
+        fan_in =  numpy.prod(filter_shape[1:])
+        W_values = numpy.asarray(rng.uniform(
+              low=-numpy.sqrt(3./fan_in),
+              high=numpy.sqrt(3./fan_in),
+              size=filter_shape), dtype=theano.config.floatX)
+        self.W = theano.shared(value=W_values, name='W')
+
+        # the bias is a 1D tensor -- one bias per output feature map
+        b_values = numpy.zeros((filter_shape[0],), dtype=theano.config.floatX)
+        self.b = theano.shared(value=b_values, name='b')
+
+        # convolve input feature maps with filters
+        conv_out = conv.conv2d(input, self.W,
+                filter_shape=filter_shape, image_shape=image_shape)
+
+        # downsample each feature map individually, using maxpooling
+        pooled_out = downsample.max_pool_2d(conv_out, poolsize, ignore_border=True)
+
+        # add the bias term. Since the bias is a vector (1D array), we first
+        # reshape it to a tensor of shape (1, n_filters, 1, 1). Each bias will thus
+        # be broadcasted across mini-batches and feature map width & height
+        self.output = T.tanh(pooled_out + self.b.dimshuffle('x', 0, 'x', 'x'))
+
+        # store parameters of this layer
+        self.params = [self.W, self.b]
+    def __repr__(self):
+        return "ConvolutionalLayer" #might have to change this        
+        
 
 #ConvolutionalLayer(rng, input=layer0_input, image_shape=(batch_size, 1, 28, 28),filter_shape=(20, 1, 5, 5), poolsize=(2, 2))
 #layer2_input = layer1.output.flatten(2)
@@ -534,7 +656,7 @@ class AlexNet(object):
     def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*7,#3
                  # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
-                 layers_types=[ConvolutionalLayer,ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                 layers_types=[ConvolutionalLayer1,ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[1024, 1024, 1024, 1024, 1024], #play with these sizes
                  n_outs=62 * 7, #3
                  rho=0.9,
@@ -567,11 +689,11 @@ class AlexNet(object):
         layer_input = self.x
         # Reshape matrix of rasterized images of shape (batch_size,28*28)
         # to a 4D tensor, compatible with our LeNetConvPoolLayer
-        conv_layer_input=layer_input.reshape((batch_size,1,28,28)) #change later params
+        self.batch_size = 100
+        conv_layer_input=layer_input.reshape((self.batch_size,1,28,28)) #change later params
         
         
         #change these for each conv layer, and specify params
-        self.batch_size = 20
         self.poolsize=(2, 2)
         
         ###THIS IS FOR THE MNIST DATASET### 
@@ -579,14 +701,14 @@ class AlexNet(object):
         # filtering reduces the image size to (28-5+1,28-5+1)=(24,24)
         # maxpooling reduces this further to (24/2,24/2) = (12,12)
         # 4D output tensor is thus of shape (20,20,12,12)
-        image_shape1=(self.batch_size, 1, 28, 28),
-        self.filter_shape1=(20, 1, 5, 5)
+        image_shape1=(self.batch_size, 1, 28, 28)
+        self.filter_shape1=(100, 1, 5, 5)
         # Construct the second convolutional pooling layer
         # filtering reduces the image size to (12 - 5 + 1, 12 - 5 + 1)=(8, 8)
         # maxpooling reduces this further to (8/2,8/2) = (4, 4)
         # 4D output tensor is thus of shape (20,50,4,4)
-        image_shape2=(self.batch_size, 20, 12, 12),
-        self.filter_shape2=(50, 20, 5, 5)
+        image_shape2=(self.batch_size, 100, 12, 12)
+        self.filter_shape2=(50, 100, 5, 5)
         # the non-convolutional layers being fully-connected, it operates on 2D matrices of
         # shape (batch_size,num_pixels) (i.e matrix of rasterized images).
         # This will generate a matrix of shape (20, 32 * 4 * 4) = (20, 512)
@@ -598,7 +720,7 @@ class AlexNet(object):
            if layer_type==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
                #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
                this_layer = layer_type(rng=numpy_rng,
-                    input=conv_layer_input, self.filter_shape1, image_shape1, poolsize=self.poolsize)
+                    input=conv_layer_input, filter_shape=self.filter_shape1, image_shape=image_shape1, poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
@@ -609,7 +731,7 @@ class AlexNet(object):
                layer_input = this_layer.output
            elif layer_type==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
                this_layer = layer_type(rng=numpy_rng,
-                    input=layer_input, self.filter_shape2, image_shape2, poolsize=self.poolsize)
+                    input=layer_input, filter_shape=self.filter_shape2, image_shape=image_shape2, poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
@@ -823,7 +945,7 @@ class RegularizedConvNet(AlexNet):
     """ Convolutional Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=100,
-                 layers_types=[ConvolutionalLayer,ConvolutionalLayer,ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                 layers_types=[ConvolutionalLayer1,ConvolutionalLayer2,ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[1024, 1024, 1024, 1024, 1024],
                  n_outs=2,
                  rho=0.9,
@@ -924,7 +1046,7 @@ class DropoutAlexNet(AlexNet):
     """ Convolutional Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=40*7,#3
-                 layers_types=[ConvolutionalLayer, ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                 layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[4000, 4000, 4000, 4000, 4000, 4000],
                  dropout_rates=[0.0, 0.5, 0.5, 0.5],
                  n_outs=62 * 7,#3
@@ -975,25 +1097,25 @@ class DropoutAlexNet(AlexNet):
             elif layer_type==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
                #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
                this_layer = layer_type(rng=numpy_rng,
-                    input=conv_layer_input, self.filter_shape1, image_shape1, poolsize=self.poolsize)
+                    input=conv_layer_input, filter_shape=self.filter_shape1, image_shape=image_shape1, poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.dropout_layers.append(this_layer)
                layer_input = this_layer.output
             elif layer_type==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
                this_layer = layer_type(rng=numpy_rng,
-                    input=layer_input, self.filter_shape2, image_shape2, poolsize=self.poolsize)
+                    input=layer_input, filter_shape=self.filter_shape2, image_shape=image_shape2, poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.dropout_layers.append(this_layer)
                dropout_layer_input = this_layer.output.flatten(2) #necessary flatten layer
             
             
             else:
-                this_layer = layer_type(rng=numpy_rng,
+               this_layer = layer_type(rng=numpy_rng,
                         input=dropout_layer_input, n_in=n_in, n_out=n_out,
                         W=layer.W, b=layer.b)
-                  assert hasattr(this_layer, 'output')
-                  self.dropout_layers.append(this_layer)
-                  dropout_layer_input = this_layer.output
+               assert hasattr(this_layer, 'output')
+               self.dropout_layers.append(this_layer)
+               dropout_layer_input = this_layer.output
  
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
@@ -1055,7 +1177,7 @@ def add_fit_and_score(class_to_chg):
             timer = time.time()
             for x, y in train_set_iterator:
                 if method == 'sgd' or method == 'adagrad':
-                    avg_cost = train_fn(x, y, lr=0.019999999553)  # TODO: you have to
+                    avg_cost = train_fn(x, y, lr=1)  # TODO: you have to
                                                          # play with this
                                                          # learning rate
                                                          # (dataset dependent)
@@ -1103,8 +1225,8 @@ def add_fit_and_score(class_to_chg):
  
  
 if __name__ == "__main__":
-    add_fit_and_score(DropoutNet)
-    add_fit_and_score(RegularizedNet)
+    add_fit_and_score(DropoutAlexNet)
+    add_fit_and_score(RegularizedConvNet)
  
     def nudge_dataset(X, Y):
         """
@@ -1137,7 +1259,7 @@ if __name__ == "__main__":
     from sklearn import cross_validation, preprocessing
     MNIST = True  # MNIST dataset
     DIGITS = False  # digits dataset
-    FACES = True  # faces dataset
+    FACES = False  # faces dataset
     TWENTYNEWSGROUPS = False  # 20 newgroups dataset
     VERBOSE = True  # prints evolution of the loss/accuracy during the fitting
     SCALE = True  # scale the dataset
@@ -1174,13 +1296,43 @@ if __name__ == "__main__":
                 #n_epochs *= 4  TODO
                 pass
  
+            #def new_dnn(dropout=False):
+                #if dropout:
+                    #print("Dropout DNN")
+                    #return DropoutNet(numpy_rng=numpy_rng, n_ins=n_features,
+                        #layers_types=[ReLU, ReLU, LogisticRegression],
+                        #layers_sizes=[200, 200],
+                        #dropout_rates=[0., 0.5, 0.5],
+                        ## TODO if you have a big enough GPU, use these:
+                        ##layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
+                        ##layers_sizes=[2000, 2000, 2000, 2000],
+                        ##dropout_rates=[0., 0.5, 0.5, 0.5, 0.5],
+                        #n_outs=n_outs,
+                        #max_norm=4.,
+                        #fast_drop=True,
+                        #debugprint=0)
+                #else:
+                    #print("Simple (regularized) DNN")
+                    #return RegularizedNet(numpy_rng=numpy_rng, n_ins=n_features,
+                        #layers_types=[ReLU, ReLU, LogisticRegression],
+                        #layers_sizes=[200, 200],
+                        #n_outs=n_outs,
+                        ##L1_reg=0.001/x_train.shape[0],
+                        ##L2_reg=0.001/x_train.shape[0],
+                        #L1_reg=0.,
+                        #L2_reg=1./x_train.shape[0],
+                        #debugprint=0)
+ 
+ 
+ 
+ 
             def new_dnn(dropout=False):
                 if dropout:
-                    print("Dropout DNN")
-                    return DropoutNet(numpy_rng=numpy_rng, n_ins=n_features,
-                        layers_types=[ReLU, ReLU, LogisticRegression],
-                        layers_sizes=[200, 200],
-                        dropout_rates=[0., 0.5, 0.5],
+                    print("AlexNet Dropout DNN")
+                    return DropoutAlexNet(numpy_rng=numpy_rng, n_ins=n_features,
+                        layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                        layers_sizes=[200, 200, 200],
+                        dropout_rates=[0., 0., 0.5, 0.5, 0.5, 0.],
                         # TODO if you have a big enough GPU, use these:
                         #layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
                         #layers_sizes=[2000, 2000, 2000, 2000],
