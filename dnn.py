@@ -635,7 +635,7 @@ class AlexNet(object):
     def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*3,#3
                  # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
-                 layers_types=[ConvolutionalLayer1,ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                 layers_types=[ConvolutionalLayer1,ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression],#LogisticRegression_crossentropy
                  layers_sizes=[1024, 1024, 1024, 1024, 1024], #play with these sizes
                  n_outs=62 * 3, #3
                  rho=0.9,
@@ -739,34 +739,15 @@ class AlexNet(object):
  
         print zip(layers_types,self.layers_ins, self.layers_outs)
         print self.layers[-1]
-        print self.layers[-1].cross_entropy(self.y)
+        #print self.layers[-1].cross_entropy(self.y)
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
         # TODO standardize cost
-        ##### error = T.mean(T.nnet.binary_crossentropy(input, self.target_var))####
-        ####
-        ##class CrossEntropyCost:
-            ##@staticmethod
-            ##def fn(a, y):
-           ## """Return the cost associated with an output ``a`` and desired output
-           ## ``y``.  Note that np.nan_to_num is used to ensure numerical
-           ## stability.  In particular, if both ``a`` and ``y`` have a 1.0
-           ## in the same slot, then the expression (1-y)*np.log(1-a)
-           ## returns nan.  The np.nan_to_num ensures that that is converted
-           ## to the correct value (0.0)."""
-           ## return np.nan_to_num(np.sum(-y*np.log(a)-(1-y)*np.log(1-a)))
-
-        ##@staticmethod
-        ##def delta(z, a, y):
-           ##"""Return the error delta from the output layer.  Note that the
-           ## parameter ``z`` is not used by the method.  It is included in
-           ## the method's parameters in order to make the interface
-           ##consistent with the delta method for other cost classes."""
-           ##return (a-y)
-        ##### error = T.mean(T.nnet.binary_crossentropy(input, self.target_var))####
         
-        self.mean_cost = self.layers[-1].cross_entropy(self.y) #TODO CHANGE THE COST TO CROSS ENTROPY
-        self.cost = self.layers[-1].cross_entropy_training_cost(self.y)
+        #self.mean_cost = self.layers[-1].cross_entropy(self.y) #TODO CHANGE THE COST TO CROSS ENTROPY
+        #self.cost = self.layers[-1].cross_entropy_training_cost(self.y)
+        self.mean_cost = self.layers[-1].negative_log_likelihood(self.y)
+        self.cost = self.layers[-1].training_cost(self.y)
         if debugprint:
             theano.printing.debugprint(self.cost)
  
@@ -782,12 +763,13 @@ class AlexNet(object):
     def get_SGD_trainer(self):
         """ Returns a plain SGD minibatch trainer with learning rate as param.
         """
-        batch_x = T.fmatrix('batch_x')
-        batch_y = T.ivector('batch_y')
+        batch_x = T.dmatrix('batch_x')#fmatrix
+        batch_y = T.lvector('batch_y')#ivector
         learning_rate = T.fscalar('lr')  # learning rate to use
         # compute the gradients with respect to the model parameters
         # using mean_cost so that the learning rate is not too dependent
         # on the batch size
+        print self.mean_cost,self.params
         gparams = T.grad(self.mean_cost, self.params)
  
         # compute list of weights updates
@@ -1034,7 +1016,7 @@ class DropoutAlexNet(AlexNet):
     """ Convolutional Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=40*3,#3
-                 layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                 layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression],#LogisticRegression_crossentropy
                  layers_sizes=[4000, 4000, 4000, 4000, 4000],
                  dropout_rates=[0.0, 0.5, 0.5, 0.5],
                  n_outs=62 * 3,#3
@@ -1109,9 +1091,10 @@ class DropoutAlexNet(AlexNet):
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
         # these are the dropout costs
-        self.mean_cost = self.dropout_layers[-1].cross_entropy(self.y)
-        self.cost = self.dropout_layers[-1].cross_entropy_training_cost(self.y)
- 
+        #self.mean_cost = self.dropout_layers[-1].cross_entropy(self.y)
+        #self.cost = self.dropout_layers[-1].cross_entropy_training_cost(self.y)
+        self.mean_cost = self.dropout_layers[-1].negative_log_likelihood(self.y)
+        self.cost = self.dropout_layers[-1].training_cost(self.y)
         # these is the non-dropout errors
         self.errors = self.layers[-1].errors(self.y)
  
@@ -1319,7 +1302,7 @@ if __name__ == "__main__":
                 if dropout:
                     print("AlexNet Dropout DNN")
                     return DropoutAlexNet(numpy_rng=numpy_rng, n_ins=n_features,
-                        layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                        layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression],#LogisticRegression_crossentropy,
                         layers_sizes=[200, 200, 200, 200, 200],
                         dropout_rates=[0.0, 0.5, 0.5, 0.5],
                         # TODO if you have a big enough GPU, use these:
