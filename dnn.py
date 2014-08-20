@@ -686,7 +686,7 @@ class AlexNet(object):
         #self.y = T.ivector('y') #ivector=int32
         self.y = T.lvector('y') #lvector=int64
         
-        
+        #might have to change this little buggger irght here to match the convs
         self.layers_ins = [n_ins] + layers_sizes
         self.layers_outs = layers_sizes + [n_outs]
         
@@ -733,6 +733,7 @@ class AlexNet(object):
                    'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output
+               print this_layer.output
            elif layer_type==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
                this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, filter_shape=self.filter_shape2, image_shape=image_shape2, poolsize=self.poolsize)
@@ -744,6 +745,7 @@ class AlexNet(object):
                    'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output.flatten(2) # NECESSARY TO IMPORT TO OTHER FORMAT
+               print layer_input
            else: 
                this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, n_in=n_in, n_out=n_out)
@@ -755,7 +757,11 @@ class AlexNet(object):
                    'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output
+               print layer_input
  
+        print zip(layers_types,self.layers_ins, self.layers_outs)
+        print self.layers[-1]
+        print self.layers[-1].cross_entropy(self.y)
         assert hasattr(self.layers[-1], 'training_cost')
         assert hasattr(self.layers[-1], 'errors')
         # TODO standardize cost
@@ -1335,7 +1341,7 @@ if __name__ == "__main__":
                     print("AlexNet Dropout DNN")
                     return DropoutAlexNet(numpy_rng=numpy_rng, n_ins=n_features,
                         layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
-                        layers_sizes=[200, 200, 200],
+                        layers_sizes=[200, 200, 200, 200, 200],
                         dropout_rates=[0., 0., 0.5, 0.5, 0.5, 0.],
                         # TODO if you have a big enough GPU, use these:
                         #layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
