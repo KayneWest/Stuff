@@ -1,6 +1,3 @@
-"""
-A deep neural network with or w/o dropout in one file.
-"""
 
 
 
@@ -212,9 +209,10 @@ class ConvolutionalLayer1(object):
         :type poolsize: tuple or list of length 2
         :param poolsize: the downsampling (pooling) factor (#rows,#cols)
         """
+        print "image_shape and filtershape",image_shape,filter_shape
         assert image_shape[1] == filter_shape[1]
         self.input = input
-        print input.type
+        
 
         # initialize weight values: the fan-in of each hidden neuron is
         # restricted by the size of the receptive fields.
@@ -317,15 +315,6 @@ class SigmoidLayer(Linear):
         self.output = T.nnet.sigmoid(self.pre_activation)
  
  
-class Conv_to_SigmoidLayer(ConvolutionalLayer):
-    """ Sigmoid activation layer (sigmoid(W.X + b)) """
-    def __init__(self, rng, input, filter_shape, image_shape, poolsize=(2, 2)):
-        super(SigmoidLayer, self).__init__(rng, input, n_in, n_out, W, b)
-        self.pre_activation = self.output.flatten(2)
-        if fdrop:
-            self.pre_activation = fast_dropout(rng, self.pre_activation)
-        self.output = T.nnet.sigmoid(self.pre_activation) 
- 
  
 class ReLU(Linear):
     """ Rectified Linear Unit activation layer (max(0, W.X + b)) """
@@ -338,17 +327,6 @@ class ReLU(Linear):
             self.pre_activation = fast_dropout(rng, self.pre_activation)
         self.output = relu_f(self.pre_activation)
 
-
-class Conv_to_ReLU(ConvolutionalLayer):
-    """ Rectified Linear Unit activation layer (max(0, W.X + b)) """
-    def __init__(self, rng, input, filter_shape, image_shape, poolsize=(2, 2)):
-        #if b is None:
-            #b = build_shared_zeros((n_out,), 'b')
-        super(ReLU, self).__init__(rng, input, n_in, n_out, W, b)
-        self.pre_activation = self.output.flatten(2)
-        if fdrop:
-            self.pre_activation = fast_dropout(rng, self.pre_activation)
-        self.output = relu_f(self.pre_activation)
  
  
 class DatasetMiniBatchIterator(object):
@@ -706,7 +684,7 @@ class AlexNet(object):
         # maxpooling reduces this further to (24/2,24/2) = (12,12)
         # 4D output tensor is thus of shape (20,20,12,12)
         image_shape1=(self.batch_size, 1, 28, 28)
-        self.filter_shape1=(100, 1, 5, 5)
+        self.filter_shape1=(20, 1, 5, 5)
         # Construct the second convolutional pooling layer
         # filtering reduces the image size to (12 - 5 + 1, 12 - 5 + 1)=(8, 8)
         # maxpooling reduces this further to (8/2,8/2) = (4, 4)
@@ -724,7 +702,7 @@ class AlexNet(object):
            if layer_type==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
                #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
                this_layer = layer_type(rng=numpy_rng,
-                    input=conv_layer_input, filter_shape=self.filter_shape1, image_shape=image_shape1, poolsize=self.poolsize)
+                    input=conv_layer_input, filter_shape=(20, 1, 5, 5), image_shape=(self.batch_size, 1, 28, 28), poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
@@ -733,10 +711,10 @@ class AlexNet(object):
                    'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output
-               print this_layer.output
+               print this_layer,layer_input
            elif layer_type==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
                this_layer = layer_type(rng=numpy_rng,
-                    input=layer_input, filter_shape=self.filter_shape2, image_shape=image_shape2, poolsize=self.poolsize)
+                    input=layer_input, filter_shape=(50, 20, 5, 5), image_shape=(self.batch_size, 20, 12, 12), poolsize=self.poolsize)
                assert hasattr(this_layer, 'output')
                self.params.extend(this_layer.params)
                self._accugrads.extend([build_shared_zeros(t.shape.eval(),
@@ -745,7 +723,7 @@ class AlexNet(object):
                    'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output.flatten(2) # NECESSARY TO IMPORT TO OTHER FORMAT
-               print layer_input
+               print this_layer,layer_input
            else: 
                this_layer = layer_type(rng=numpy_rng,
                     input=layer_input, n_in=n_in, n_out=n_out)
@@ -757,7 +735,7 @@ class AlexNet(object):
                    'accudelta') for t in this_layer.params])
                self.layers.append(this_layer)
                layer_input = this_layer.output
-               print layer_input
+               print this_layer,layer_input
  
         print zip(layers_types,self.layers_ins, self.layers_outs)
         print self.layers[-1]
@@ -1236,7 +1214,7 @@ def add_fit_and_score(class_to_chg):
  
 if __name__ == "__main__":
     add_fit_and_score(DropoutAlexNet)
-    add_fit_and_score(RegularizedConvNet)
+    #add_fit_and_score(RegularizedConvNet)
  
     def nudge_dataset(X, Y):
         """
