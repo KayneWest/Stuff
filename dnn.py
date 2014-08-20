@@ -17,7 +17,7 @@ from theano.tensor.nnet import conv
 from theano.tensor.shared_randomstreams import RandomStreams
 from collections import OrderedDict
  
-BATCH_SIZE = 100
+BATCH_SIZE = 20
  
  
 def relu_f(vec):
@@ -214,6 +214,7 @@ class ConvolutionalLayer1(object):
         """
         assert image_shape[1] == filter_shape[1]
         self.input = input
+        print input.type
 
         # initialize weight values: the fan-in of each hidden neuron is
         # restricted by the size of the receptive fields.
@@ -654,11 +655,11 @@ class NeuralNet(object):
 class AlexNet(object):
     """ Convolutional Neural network (not regularized, without dropout) """
     def __init__(self, numpy_rng, theano_rng=None, 
-                 n_ins=40*7,#3
+                 n_ins=40*3,#3
                  # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
                  layers_types=[ConvolutionalLayer1,ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[1024, 1024, 1024, 1024, 1024], #play with these sizes
-                 n_outs=62 * 7, #3
+                 n_outs=62 * 3, #3
                  rho=0.9,
                  eps=1.E-6,
                  max_norm=0.,
@@ -680,8 +681,11 @@ class AlexNet(object):
         if theano_rng == None:
             theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
  
-        self.x = T.fmatrix('x')
-        self.y = T.ivector('y')
+        #self.x = T.fmatrix('x') #fmatrix=float32  TODO NEED TO GET THE CONVOLUTIONS TO USE FLOAT32
+        self.x = T.dmatrix('x') #dmatrix=float64
+        #self.y = T.ivector('y') #ivector=int32
+        self.y = T.lvector('y') #lvector=int64
+        
         
         self.layers_ins = [n_ins] + layers_sizes
         self.layers_outs = layers_sizes + [n_outs]
@@ -689,7 +693,7 @@ class AlexNet(object):
         layer_input = self.x
         # Reshape matrix of rasterized images of shape (batch_size,28*28)
         # to a 4D tensor, compatible with our LeNetConvPoolLayer
-        self.batch_size = 100
+        self.batch_size = BATCH_SIZE
         conv_layer_input=layer_input.reshape((self.batch_size,1,28,28)) #change later params
         
         
@@ -1387,11 +1391,13 @@ if __name__ == "__main__":
     if MNIST:
         from sklearn.datasets import fetch_mldata
         mnist = fetch_mldata('MNIST original')
-        X = numpy.asarray(mnist.data, dtype='float32')
+        #X = numpy.asarray(mnist.data, dtype='float32')
+        X = numpy.asarray(mnist.data, dtype='float64')
         if SCALE:
             #X = preprocessing.scale(X)
             X /= 255.
-        y = numpy.asarray(mnist.target, dtype='int32')
+        #y = numpy.asarray(mnist.target, dtype='int32')
+        y = numpy.asarray(mnist.target, dtype='int64')
         print("Total dataset size:")
         print("n samples: %d" % X.shape[0])
         print("n features: %d" % X.shape[1])
