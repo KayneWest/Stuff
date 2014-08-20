@@ -1116,7 +1116,7 @@ class DropoutAlexNet(AlexNet):
         self.errors = self.layers[-1].errors(self.y)
  
     def __repr__(self):
-        return super(DropoutNet, self).__repr__() + "\n"\
+        return super(DropoutAlexNet, self).__repr__() + "\n"\
                 + "dropout rates: " + str(self.dropout_rates)
 
 
