@@ -1059,7 +1059,7 @@ class DropoutAlexNet(AlexNet):
         else:
             dropout_layer_input = dropout(numpy_rng, self.x, p=dropout_rates[0])
         self.dropout_layers = []
- 
+        conv_layer_input=dropout_layer_input.reshape((self.batch_size,1,28,28)) #change later param
         for layer, layer_type, n_in, n_out, dr in zip(self.layers,
                 layers_types, self.layers_ins, self.layers_outs,
                 [0]+[0]+dropout_rates[1:] + [0]):  # !!! we do not dropout anything
@@ -1085,13 +1085,13 @@ class DropoutAlexNet(AlexNet):
             elif layer_type==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
                #last layer must have output.flatten(2) as the summation of the layer to be used with the ReLU layers
                this_layer = layer_type(rng=numpy_rng,
-                    input=conv_layer_input, filter_shape=self.filter_shape1, image_shape=image_shape1, poolsize=self.poolsize)
+                     input=conv_layer_input, filter_shape=(20, 1, 5, 5), image_shape=(self.batch_size, 1, 28, 28), poolsize=(2,2))
                assert hasattr(this_layer, 'output')
                self.dropout_layers.append(this_layer)
                layer_input = this_layer.output
             elif layer_type==ConvolutionalLayer2: #if convlayer1,convlayer2,etc. then change params with forloop
                this_layer = layer_type(rng=numpy_rng,
-                    input=layer_input, filter_shape=self.filter_shape2, image_shape=image_shape2, poolsize=self.poolsize)
+                    input=layer_input, filter_shape=(50, 20, 5, 5), image_shape=(self.batch_size, 20, 12, 12), poolsize=(2,2))
                assert hasattr(this_layer, 'output')
                self.dropout_layers.append(this_layer)
                dropout_layer_input = this_layer.output.flatten(2) #necessary flatten layer
