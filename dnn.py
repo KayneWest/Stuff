@@ -697,6 +697,16 @@ class AlexNet(object):
         #relu_input = convolutional.output.flatten(2)
         # n_in=50 * 4 * 4, # 4D output tensor is thus of shape (20,#50,#4,#4)
         
+        
+        ######NEED TO FIGURE OUT A GOOD WAY TO DO THIS IN ONE FELL SWOOP####
+        
+        
+        #it's all about making n_in and n_out line up so that a weight matrix can be deployed properly
+        #right now, the weight mtrx from conv1->conv2 are fine, but from conv2->relu, the sizes are differrnt
+        #and thus are bad
+        
+        
+        
         for layer_type, n_in, n_out in zip(layers_types,
                 self.layers_ins, self.layers_outs):
            if layer_type==ConvolutionalLayer1: #if convlayer1,convlayer2,etc. then change params with forloop,
@@ -737,6 +747,10 @@ class AlexNet(object):
                layer_input = this_layer.output
                print this_layer,layer_input
  
+ 
+ 
+ 
+ 
         print zip(layers_types,self.layers_ins, self.layers_outs)
         print self.layers[-1]
         #print self.layers[-1].cross_entropy(self.y)
@@ -770,6 +784,7 @@ class AlexNet(object):
         # using mean_cost so that the learning rate is not too dependent
         # on the batch size
         print self.mean_cost,self.params
+        print T.grad(self.mean_cost, self.params[4:])
         gparams = T.grad(self.mean_cost, self.params)
  
         # compute list of weights updates
@@ -1302,7 +1317,7 @@ if __name__ == "__main__":
                 if dropout:
                     print("AlexNet Dropout DNN")
                     return DropoutAlexNet(numpy_rng=numpy_rng, n_ins=n_features,
-                        layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression],#LogisticRegression_crossentropy,
+                        layers_types=[ConvolutionalLayer, ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],#LogisticRegression_crossentropy,
                         layers_sizes=[200, 200, 200, 200, 200],
                         dropout_rates=[0.0, 0.5, 0.5, 0.5],
                         # TODO if you have a big enough GPU, use these:
