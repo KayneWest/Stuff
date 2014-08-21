@@ -784,7 +784,7 @@ class AlexNet(object):
         # using mean_cost so that the learning rate is not too dependent
         # on the batch size
         print self.mean_cost,self.params
-        print T.grad(self.mean_cost, self.params[4:])
+        print T.grad(self.mean_cost, self.params[0:3])
         gparams = T.grad(self.mean_cost, self.params)
  
         # compute list of weights updates
@@ -1317,7 +1317,7 @@ if __name__ == "__main__":
                 if dropout:
                     print("AlexNet Dropout DNN")
                     return DropoutAlexNet(numpy_rng=numpy_rng, n_ins=n_features,
-                        layers_types=[ConvolutionalLayer, ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression],#LogisticRegression_crossentropy,
+                        layers_types=[ConvolutionalLayer1, ConvolutionalLayer2, ReLU, ReLU, ReLU, LogisticRegression],#LogisticRegression_crossentropy,
                         layers_sizes=[200, 200, 200, 200, 200],
                         dropout_rates=[0.0, 0.5, 0.5, 0.5],
                         # TODO if you have a big enough GPU, use these:
