@@ -126,16 +126,31 @@ class ConvolutionalLayer(object):
 
 
 class SigmoidLayer(Linear):
-    """ Sigmoid activation layer (sigmoid(W.X + b)) """
-    def __init__(self, rng, input, n_in, n_out, W=None, b=None, dropout=0.0, fdrop=False):
-        super(SigmoidLayer, self).__init__(rng, input, n_in, n_out, W, b)
+    """ Basic sigmoidal transformation layer (W.X + b) """
+    def __init__(self, rng, input, n_in, n_out, dropout=0.0,W=None, b=None, fdrop=False):
+        if W is None:
+            W_values = numpy.asarray(rng.uniform(
+                low=-numpy.sqrt(6. / (n_in + n_out)),
+                high=numpy.sqrt(6. / (n_in + n_out)),
+                size=(n_in, n_out)), dtype=theano.config.floatX)
+            W_values *= 4  # This works for sigmoid activated networks!
+            W = theano.shared(value=W_values, name='W', borrow=True)
+        if b is None:
+            b = build_shared_zeros((n_out,), 'b')
+        self.input = input
+        self.W = W
+        self.b = b
+        #self.dropout=dropout
+        self.params = [self.W, self.b]
+        self.output = T.dot(self.input, self.W) + self.b
         self.pre_activation = self.output
         if fdrop:
             self.pre_activation = fast_dropout(rng, self.pre_activation)
         self.output = T.nnet.sigmoid(self.pre_activation)
  
+
 class ReLU(object):
-    """ Basic linear transformation layer (W.X + b) """
+    """ Basic rectified-linear transformation layer (W.X + b) """
     def __init__(self, rng, input, n_in, n_out, dropout=0.0,W=None, b=None, fdrop=False):
         if W is None:
             W_values = numpy.asarray(rng.uniform(
@@ -170,7 +185,6 @@ class ReLU(object):
 #        if fdrop:
 #            self.pre_activation = fast_dropout(rng, self.pre_activation)
 #        self.output = relu_f(self.pre_activation)
-
  
  
 class DatasetMiniBatchIterator(object):
@@ -250,15 +264,204 @@ class LogisticRegression_crossentropy:
             print("!!! y should be of int type")
             return T.mean(T.neq(self.y_pred, numpy.asarray(y, dtype='int')))
 
+####################################################################################
+####################################################################################
+
+class NeuralNet(object):
+    """ Neural network (not regularized, without dropout) """
+    def __init__(self, numpy_rng, theano_rng=None, 
+                 n_ins=40*3,
+                 layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
+                 layers_sizes=[1024, 1024, 1024, 1024],
+                 n_outs=62 * 3,
+                 rho=0.9,
+                 eps=1.E-6,
+                 max_norm=0.,
+                 debugprint=False):
+        """
+        Basic feedforward neural network.
+        """
+        self.layers = []
+        self.params = []
+        self.n_layers = len(layers_types)
+        self.layers_types = layers_types
+        assert self.n_layers > 0
+        self.max_norm = max_norm
+        self._rho = rho  # "momentum" for adadelta
+        self._eps = eps  # epsilon for adadelta
+        self._accugrads = []  # for adadelta
+        self._accudeltas = []  # for adadelta
+ 
+        if theano_rng == None:
+            theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
+ 
+        self.x = T.fmatrix('x')
+        self.y = T.ivector('y')
+        
+        self.layers_ins = [n_ins] + layers_sizes
+        self.layers_outs = layers_sizes + [n_outs]
+        
+        layer_input = self.x
+        
+        for layer_type, n_in, n_out in zip(layers_types,
+                self.layers_ins, self.layers_outs):
+            this_layer = layer_type(rng=numpy_rng,
+                    input=layer_input, n_in=n_in, n_out=n_out)
+            assert hasattr(this_layer, 'output')
+            self.params.extend(this_layer.params)
+            self._accugrads.extend([build_shared_zeros(t.shape.eval(),
+                'accugrad') for t in this_layer.params])
+            self._accudeltas.extend([build_shared_zeros(t.shape.eval(),
+                'accudelta') for t in this_layer.params])
+ 
+            self.layers.append(this_layer)
+            layer_input = this_layer.output
+ 
+        assert hasattr(self.layers[-1], 'training_cost')
+        assert hasattr(self.layers[-1], 'errors')
+        # TODO standardize cost
+        self.mean_cost = self.layers[-1].negative_log_likelihood(self.y)
+        self.cost = self.layers[-1].training_cost(self.y)
+        if debugprint:
+            theano.printing.debugprint(self.cost)
+ 
+        self.errors = self.layers[-1].errors(self.y)
+ 
+    def __repr__(self):
+        dimensions_layers_str = map(lambda x: "x".join(map(str, x)),
+                                    zip(self.layers_ins, self.layers_outs))
+        return "_".join(map(lambda x: "_".join((x[0].__name__, x[1])),
+                            zip(self.layers_types, dimensions_layers_str)))
+ 
+ 
+    def get_SGD_trainer(self):
+        """ Returns a plain SGD minibatch trainer with learning rate as param.
+        """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        learning_rate = T.fscalar('lr')  # learning rate to use
+        # compute the gradients with respect to the model parameters
+        # using mean_cost so that the learning rate is not too dependent
+        # on the batch size
+        gparams = T.grad(self.mean_cost, self.params)
+ 
+        # compute list of weights updates
+        updates = OrderedDict()
+        for param, gparam in zip(self.params, gparams):
+            if self.max_norm:
+                W = param - gparam * learning_rate
+                col_norms = W.norm(2, axis=0)
+                desired_norms = T.clip(col_norms, 0, self.max_norm)
+                updates[param] = W * (desired_norms / (1e-6 + col_norms))
+            else:
+                updates[param] = param - gparam * learning_rate
+ 
+        train_fn = theano.function(inputs=[theano.Param(batch_x),
+                                           theano.Param(batch_y),
+                                           theano.Param(learning_rate)],
+                                   outputs=self.mean_cost,
+                                   updates=updates,
+                                   givens={self.x: batch_x, self.y: batch_y})
+ 
+        return train_fn
+ 
+ 
+    def get_adagrad_trainer(self):
+        """ Returns an Adagrad (Duchi et al. 2010) trainer using a learning rate.
+        """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        learning_rate = T.fscalar('lr')  # learning rate to use
+        # compute the gradients with respect to the model parameters
+        gparams = T.grad(self.mean_cost, self.params)
+ 
+        # compute list of weights updates
+        updates = OrderedDict()
+        for accugrad, param, gparam in zip(self._accugrads, self.params, gparams):
+            # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
+            agrad = accugrad + gparam * gparam
+            dx = - (learning_rate / T.sqrt(agrad + self._eps)) * gparam
+            if self.max_norm:
+                W = param + dx
+                col_norms = W.norm(2, axis=0)
+                desired_norms = T.clip(col_norms, 0, self.max_norm)
+                updates[param] = W * (desired_norms / (1e-6 + col_norms))
+            else:
+                updates[param] = param + dx
+            updates[accugrad] = agrad
+ 
+        train_fn = theano.function(inputs=[theano.Param(batch_x), 
+            theano.Param(batch_y),
+            theano.Param(learning_rate)],
+            outputs=self.mean_cost,
+            updates=updates,
+            givens={self.x: batch_x, self.y: batch_y})
+ 
+        return train_fn
+ 
+    def get_adadelta_trainer(self):
+        """ Returns an Adadelta (Zeiler 2012) trainer using self._rho and
+        self._eps params.
+        """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        # compute the gradients with respect to the model parameters
+        gparams = T.grad(self.mean_cost, self.params)
+ 
+        # compute list of weights updates
+        updates = OrderedDict()
+        for accugrad, accudelta, param, gparam in zip(self._accugrads,
+                self._accudeltas, self.params, gparams):
+            # c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
+            agrad = self._rho * accugrad + (1 - self._rho) * gparam * gparam
+            dx = - T.sqrt((accudelta + self._eps)
+                          / (agrad + self._eps)) * gparam
+            updates[accudelta] = (self._rho * accudelta
+                                  + (1 - self._rho) * dx * dx)
+            if self.max_norm:
+                W = param + dx
+                col_norms = W.norm(2, axis=0)
+                desired_norms = T.clip(col_norms, 0, self.max_norm)
+                updates[param] = W * (desired_norms / (1e-6 + col_norms))
+            else:
+                updates[param] = param + dx
+            updates[accugrad] = agrad
+ 
+        train_fn = theano.function(inputs=[theano.Param(batch_x),
+                                           theano.Param(batch_y)],
+                                   outputs=self.mean_cost,
+                                   updates=updates,
+                                   givens={self.x: batch_x, self.y: batch_y})
+ 
+        return train_fn
+ 
+    def score_classif(self, given_set):
+        """ Returns functions to get current classification errors. """
+        batch_x = T.fmatrix('batch_x')
+        batch_y = T.ivector('batch_y')
+        score = theano.function(inputs=[theano.Param(batch_x),
+                                        theano.Param(batch_y)],
+                                outputs=self.errors,
+                                givens={self.x: batch_x, self.y: batch_y})
+ 
+        def scoref():
+            """ returned function that scans the entire set given as input """
+            return [score(batch_x, batch_y) for batch_x, batch_y in given_set]
+ 
+        return scoref
 
 
-class AlexNet(object):
+####################################################################################
+####################################################################################
+
+
+class ConvNet(object):
     """ Convolutional Neural network (not regularized, without dropout) """
     def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*3,# HAVE TO PLAY WITH THESE VALUES HERE 
                  # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
                  layers_types=[ConvolutionalLayer,ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],#LogisticRegression_crossentropy
-                 layers_sizes=['NA', 'NA', 800, 500, 500], #play with these sizes
+                 #layers_sizes=['NA', 'NA', 800, 500, 500], #play with these sizes
                  n_outs=62 * 3, #HAVE TO PLAY WITH THESE VALUES TOO
                  rho=0.9,
                  eps=1.E-6,
@@ -270,7 +473,7 @@ class AlexNet(object):
         self.layers = []
         self.params = []
         self.n_layers = len(layers_types)
-        self.layers_types = layers_types
+        #self.layers_types = layers_types
         assert self.n_layers > 0
         self.max_norm = max_norm
         self._rho = rho  # "momentum" for adadelta
@@ -557,6 +760,152 @@ class AlexNet(object):
 
 ######################################################################################
 ######################################################################################
+
+class RegularizedNet(NeuralNet):
+    """ Neural net with L1 and L2 regularization """
+    def __init__(self, numpy_rng, theano_rng=None,
+                 n_ins=100,
+                 layers_types=[ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[1024, 1024, 1024],
+                 n_outs=2,
+                 rho=0.9,
+                 eps=1.E-6,
+                 L1_reg=0.,
+                 L2_reg=0.,
+                 max_norm=0.,
+                 debugprint=False):
+        """
+        Feedforward neural network with added L1 and/or L2 regularization.
+        """
+        super(RegularizedNet, self).__init__(numpy_rng, theano_rng, n_ins,
+                layers_types, layers_sizes, n_outs, rho, eps, max_norm,
+                debugprint)
+ 
+        L1 = shared(0.)
+        for param in self.params:
+            L1 += T.sum(abs(param))
+        if L1_reg > 0.:
+            self.cost = self.cost + L1_reg * L1
+        L2 = shared(0.)
+        for param in self.params:
+            L2 += T.sum(param ** 2)
+        if L2_reg > 0.:
+            self.cost = self.cost + L2_reg * L2
+
+######################################################################################
+######################################################################################
+
+
+class RegularizedNet(ConvNet):
+    """ Neural net with L1 and L2 regularization """
+       def __init__(self, numpy_rng, theano_rng=None, 
+                 n_ins=40*3,# HAVE TO PLAY WITH THESE VALUES HERE 
+                 # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
+                 layers_types=[ConvolutionalLayer,ConvolutionalLayer, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],#LogisticRegression_crossentropy
+                 #layers_sizes=['NA', 'NA', 800, 500, 500], #play with these sizes
+                 n_outs=62 * 3, #HAVE TO PLAY WITH THESE VALUES TOO
+                 rho=0.9,
+                 eps=1.E-6,
+                 L1_reg=0.,
+                 L2_reg=0.
+                 max_norm=0.,
+                 debugprint=False): 
+        """
+        Feedforward neural network with added L1 and/or L2 regularization.
+        """
+        super(RegularizedNet, self).__init__(numpy_rng, theano_rng, n_ins,
+                layers_types, layers_sizes, n_outs, rho, eps, max_norm,
+                debugprint)
+ 
+        L1 = shared(0.)
+        for param in self.params:
+            L1 += T.sum(abs(param))
+        if L1_reg > 0.:
+            self.cost = self.cost + L1_reg * L1
+        L2 = shared(0.)
+        for param in self.params:
+            L2 += T.sum(param ** 2)
+        if L2_reg > 0.:
+            self.cost = self.cost + L2_reg * L2
+
+
+######################################################################################
+######################################################################################
+
+
+class DropoutNet(NeuralNet):
+    """ Neural net with dropout (see Hinton's et al. paper) """
+    def __init__(self, numpy_rng, theano_rng=None,
+                 n_ins=40*3,
+                 layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_sizes=[4000, 4000, 4000, 4000],
+                 dropout_rates=[0.0, 0.5, 0.5, 0.5, 0.5],
+                 n_outs=62 * 3,
+                 rho=0.9,
+                 eps=1.E-6,
+                 max_norm=0.,
+                 fast_drop=False,
+                 debugprint=False):
+        """
+        Feedforward neural network with dropout regularization.
+        """
+        super(DropoutNet, self).__init__(numpy_rng, theano_rng, n_ins,
+                layers_types, layers_sizes, n_outs, rho, eps, max_norm,
+                debugprint)
+ 
+        self.dropout_rates = dropout_rates
+        if fast_drop:
+            if dropout_rates[0]:
+                dropout_layer_input = fast_dropout(numpy_rng, self.x)
+            else:
+                dropout_layer_input = self.x
+        else:
+            dropout_layer_input = dropout(numpy_rng, self.x, p=dropout_rates[0])
+        self.dropout_layers = []
+ 
+        for layer, layer_type, n_in, n_out, dr in zip(self.layers,
+                layers_types, self.layers_ins, self.layers_outs,
+                dropout_rates[1:] + [0]):  # !!! we do not dropout anything
+                                           # from the last layer !!!
+            if dr:
+                if fast_drop:
+                    this_layer = layer_type(rng=numpy_rng,
+                            input=dropout_layer_input, n_in=n_in, n_out=n_out,
+                            W=layer.W, b=layer.b, fdrop=True)
+                else:
+                    this_layer = layer_type(rng=numpy_rng,
+                            input=dropout_layer_input, n_in=n_in, n_out=n_out,
+                            W=layer.W * 1. / (1. - dr),
+                            b=layer.b * 1. / (1. - dr))
+                    # N.B. dropout with dr==1 does not dropanything!!
+                    this_layer.output = dropout(numpy_rng, this_layer.output, dr)
+            else:
+                this_layer = layer_type(rng=numpy_rng,
+                        input=dropout_layer_input, n_in=n_in, n_out=n_out,
+                        W=layer.W, b=layer.b)
+ 
+            assert hasattr(this_layer, 'output')
+            self.dropout_layers.append(this_layer)
+            dropout_layer_input = this_layer.output
+ 
+        assert hasattr(self.layers[-1], 'training_cost')
+        assert hasattr(self.layers[-1], 'errors')
+        # these are the dropout costs
+        self.mean_cost = self.dropout_layers[-1].negative_log_likelihood(self.y)
+        self.cost = self.dropout_layers[-1].training_cost(self.y)
+ 
+        # these is the non-dropout errors
+        self.errors = self.layers[-1].errors(self.y)
+ 
+    def __repr__(self):
+        return super(DropoutNet, self).__repr__() + "\n"\
+                + "dropout rates: " + str(self.dropout_rates)
+
+
+######################################################################################
+######################################################################################
+
+
 class ConvDropNet(object):
     """ Convolutional Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
@@ -874,9 +1223,10 @@ class ConvDropNet(object):
             return [score(batch_x, batch_y) for batch_x, batch_y in given_set]
  
         return scoref
+
+
 #########################################################################################
-
-
+#########################################################################################
 
 
 def add_fit_and_score(class_to_chg):
@@ -970,6 +1320,10 @@ def add_fit_and_score(class_to_chg):
     class_to_chg.fit = MethodType(fit, None, class_to_chg)
     class_to_chg.score = MethodType(score, None, class_to_chg)
  
+
+#########################################################################################
+#########################################################################################
+
  
 if __name__ == "__main__":
     #add_fit_and_score(DropoutAlexNet)
@@ -1131,7 +1485,7 @@ if __name__ == "__main__":
             ax2 = plt.subplot(222)
             ax3 = plt.subplot(223)
             ax4 = plt.subplot(224)  # TODO plot the updates of the weights
-            methods = ['sgd']#, 'adagrad', 'adadelta']
+            methods = ['sgd', 'adagrad', 'adadelta']
             #methods = ['adadelta'] TODO if you want "good" results asap
             for method in methods:
                 dnn = new_dnn(use_dropout)
@@ -1230,3 +1584,4 @@ if __name__ == "__main__":
                      numpy_rng=numpy.random.RandomState(123),
                      svms=False, nb=True, deepnn=True,
                      name='20newsgroups')
+ 
