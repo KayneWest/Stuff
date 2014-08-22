@@ -765,7 +765,7 @@ class RegularizedNet(NeuralNet):
     """ Neural net with L1 and L2 regularization """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=100,
-                 layers_types=[ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_types=[ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[1024, 1024, 1024],
                  n_outs=2,
                  rho=0.9,
@@ -797,7 +797,7 @@ class RegularizedNet(NeuralNet):
 
 
 class RegularizedNet(ConvNet):
-    """ Neural net with L1 and L2 regularization """
+       """ Neural net with L1 and L2 regularization """
        def __init__(self, numpy_rng, theano_rng=None, 
                  n_ins=40*3,# HAVE TO PLAY WITH THESE VALUES HERE 
                  # add two conv layers and their paramsConvolutionalLayer,ConvolutionalLayer,
@@ -807,7 +807,7 @@ class RegularizedNet(ConvNet):
                  rho=0.9,
                  eps=1.E-6,
                  L1_reg=0.,
-                 L2_reg=0.
+                 L2_reg=0.,
                  max_norm=0.,
                  debugprint=False): 
         """
@@ -837,7 +837,7 @@ class DropoutNet(NeuralNet):
     """ Neural net with dropout (see Hinton's et al. paper) """
     def __init__(self, numpy_rng, theano_rng=None,
                  n_ins=40*3,
-                 layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression],
+                 layers_types=[ReLU, ReLU, ReLU, ReLU, LogisticRegression_crossentropy],
                  layers_sizes=[4000, 4000, 4000, 4000],
                  dropout_rates=[0.0, 0.5, 0.5, 0.5, 0.5],
                  n_outs=62 * 3,
@@ -1329,7 +1329,7 @@ if __name__ == "__main__":
     #add_fit_and_score(DropoutAlexNet)
     #add_fit_and_score(RegularizedConvNet)
     add_fit_and_score(ConvDropNet)
-    add_fit_and_score(AlexNet)
+    add_fit_and_score(DropoutNet)
  
     def nudge_dataset(X, Y):
         """
@@ -1470,7 +1470,7 @@ if __name__ == "__main__":
                 else:
                     print("Simple (regularized) DNN")
                     return RegularizedNet(numpy_rng=numpy_rng, n_ins=n_features,
-                        layers_types=[ReLU, ReLU, LogisticRegression],
+                        layers_types=[ReLU, ReLU, LogisticRegression_crossentropy],
                         layers_sizes=[200, 200],
                         n_outs=n_outs,
                         #L1_reg=0.001/x_train.shape[0],
