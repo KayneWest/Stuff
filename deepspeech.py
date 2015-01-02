@@ -1,14 +1,11 @@
-import pandas as pd
-import sqlite3
-from sklearn.cross_validation import train_test_split
-from sklearn.naive_bayes import GaussianNB
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neural_network import BernoulliRBM
-from sklearn.metrics import classification_report
-from sklearn.grid_search import GridSearchCV
-from sklearn.pipeline import Pipeline
-from sklearn import svm
+from __future__ import division
+import numpy as np
+import os, wave, struct
+import numpy as np
+import subprocess
+import re
+from itertools import chain
+from multiprocessing import cpu_count, Pool
 import numpy, theano, sys, math
 from theano import tensor as T
 from theano import shared
@@ -16,10 +13,434 @@ from theano.tensor.signal import downsample
 from theano.tensor.nnet import conv
 from theano.tensor.shared_randomstreams import RandomStreams
 from collections import OrderedDict
-from sklearn.svm import LinearSVC,SVC
 import numpy as np
 import time
 
+
+#### if you already have this downloaded, then don't worry about it
+download_boost=False
+download_ted=False
+download_kenlm=False
+
+#need for speech data
+if download_ted:
+	print 'downloading TED-LIUM database'
+	command="wget http://www-lium.univ-lemans.fr/sites/default/files/TEDLIUM_release2.tar.gz"
+	subprocess.call(command.split())
+
+	print 'tar-ing the tar file.'
+	command="tar -zxvf TEDLIUM_release2.tar.gz"
+	subprocess.call(command.split())
+
+#need for language model, the kenlm relies on some of it
+if download_boost:
+	print 'downloading boost'
+	command="wget http://downloads.sourceforge.net/project/boost/boost/1.57.0/boost_1_57_0.tar.gz?r=http%3A%2F%2Fsourceforge.net%2Fprojects%2Fboost%2Ffiles%2Fboost%2F1.57.0%2F&ts=1420172150&use_mirror=hivelocity"
+	subprocess.call(command.split())
+	print 'installing boost, will take some time'
+	command="cd boost_1_57_0"
+	subprocess.call(command.split())
+	command="./bootstrap.sh --prefix=/home/ubuntu/boost"
+	subprocess.call(command.split())
+	command="sudo ./b2"
+	subprocess.call(command.split())
+	command="sudo ./b2 install"
+	subprocess.call(command.split())
+
+#python port of kenlm language model
+def kenlm():
+	if download_kenlm:
+		#https://github.com/kpu/kenlm
+		print 'downloading kenlm code'
+		command="pip install https://github.com/kpu/kenlm/archive/master.zip"
+		subprocess.call(command.split())
+	else:
+		import kenlm
+
+kenlm()
+
+
+classes={'a':1, 'b':2, 'c':3, 'd':4, 'e':5, 'f':6, 'g':7, 'h':8, 'i':9, 'j':10, 'k':11, 'l':12, 'm':13, 'n':14, 'o':15, 
+					'p':16, 'q':17, 'r':18, 's':19, 't':20, 'u':21, 'v':22, 'w':23, 'x':24, 'y':25, 'z':26,"'":27,' ':0}
+
+#new and different method?
+def class_vectorizor(j):
+	'''this will be used in transforming text to numpy arrays'''
+	array = np.zeros((len(classes), 1),dtype='float32')
+	array[classes[j]] = 1.0
+	return (array)
+
+def class_vectorizor_1D(j):
+	'''this will be used in transforming text to numpy arrays'''
+	array = np.zeros((len(classes), 1),dtype='float32')
+	array[classes[j]] = 1.0
+	return np.concatenate(array) 
+
+def j_shift(curr_shape, shiftX, shiftY):
+    """ Helper to modify the in_shape tuple by jitter amounts """
+    return curr_shape[:-2] + (curr_shape[-2] - shiftY, curr_shape[-1] - shiftX)
+
+class SignalProcessing:
+	'''
+	createing mfcc features using this SignalProcessing class
+
+	mfcc: 				mel frequency cepstral coefficients
+
+	cepstral_coeffs: 	Transforming the filter bank with natural 
+					 	logarithm and DCT yields the cepstral coefficients
+
+	mel_filter: 		the output of the mel filter is the weighted sum of the 
+						Fast Fourier Transform spectrum values
+
+	hamming_window:  	The window is optimized to minimize the 
+						maximum (nearest) side lobe
+
+	preemphasis_filter: pre-emphasis refers to a system process designed to increase 
+						(within a frequency band) the magnitude of some (usually higher) 
+						frequencies with respect to the magnitude of other (usually lower) 
+						frequencies in order to improve the overall signal-to-noise ratio 
+						by minimizing the adverse effects of such phenomena as attenuation 
+						distortion or saturation of recording media in subsequent parts of the system. 
+						The mirror operation is called de-emphasis, and the system as a whole is called emphasis
+
+	notch_filter: 		a filter that passes most frequencies unaltered, but attenuates those in a 
+						specific range to very low levels. It is the opposite of a band-pass filter. 
+						A notch filter is a band-stop filter with a narrow stopband (high Q factor).
+
+	fft: 				# discrete fast fourier transform
+	'''
+	def mfcc(self, signal) :
+		# some signal filtering
+		offset_free_signal = self.notch_filter(signal)
+		pre_signal = self.preemphasis_filter(offset_free_signal)
+		windowed_signal = self.hamming_window(pre_signal)
+		# convert signal (time-domain) to frequency domain
+		transformed_signal = self.fft(windowed_signal)
+		# the human ear has high-frequency resolution at low-frequency parts of the spetrum
+		# and low frequency resolution at high parts of the spectrum
+		# thus to more accurately mimick the frequency  resolution of the human ear
+		# we need to convert a frequency into the mel-scale
+		fbank = self.mel_filter(transformed_signal)
+		c = self.cepstral_coeffs(fbank)
+		# energy measure
+		squares = [ n*n for n in signal ]
+		sigma = np.log(sum(squares)) 
+		logE = sigma if sigma > -50 else -50
+		# the final feature vector consists of 14 coefficients
+		# the log-energy coefficient and the 13 cepstral coefficients
+		c.append(logE)
+		return c
+
+	def cepstral_coeffs(self, fbank) :
+		log_fbank = [ np.log(n) if np.log(n) > -50 else -50 for n in fbank ]
+		# Discrete Cosine Transform
+		c = []
+		for i in range(0,13) :
+			p = [ log_fbank[j-1] * np.cos(((np.pi*i)/23)*(j-0.5)) for j in range(1,24) ]
+			c.append(sum(p))
+		return c
+
+	def mel_filter(self, spectrum,n=24) :
+		# mel scale function
+		def mel(x) :
+			return 2595 * np.log10(1 + (x/700))
+		# inverse mel function
+		def inv_mel(x) :
+			return 700 * ( np.exp(x/1127) - 1 )
+		fstart = 64 # 64 Hz  
+		fend = 4000 # 4 kHz (half of sampling frequency)
+		mel_points = []
+		mel_points.append(mel(fstart)) # upper bound of frequency (limited to half of the sampling frequency)
+		mel_points.append(mel(fend)) # lower bound of frequency
+		d = (mel_points[1]-mel_points[0])/(n+1) # unit distance
+		points = [ i*d+mel(fstart) for i in range(1,n+1) ] 
+		# now compute n points linearly between the upper and lower bound
+		# and return them to the frequency domain
+		mel_points.extend(points)
+		mel_points = sorted(mel_points)
+		c = [ int((inv_mel(n)/fend)*len(spectrum)) for n in mel_points ]
+		fbank = []
+		for k in range(0,23) :
+			part1, part2 = 0,0
+			for i in range(int(c[k]),int(c[k+1])) :
+				part1 += ((i - c[k] + 1)/(c[k+1]-c[k]+1))*spectrum[i]
+			for i in range(c[k+1]+1,c[k+2]) :
+				part2 += (1 - (i-c[k+1])/(c[k+2]-c[k+1]+1))*spectrum[i]
+			fbank.append(part1+part2)
+		return fbank
+
+	def hamming_window(self, signal) :
+		windowed_signal = []
+		for i in range(0,len(signal)) :
+			windowed_signal.append(( 0.54 - 0.46*np.cos((2*np.pi*(i  - 1 ))/(len(signal)-1)))*signal[i])
+		return windowed_signal
+
+	def preemphasis_filter(self, signal) :
+		pre_signal = []
+		for i in range(0,len(signal)) :
+			pre_signal.append( signal[i] - ( 0.97 * signal[i-1] ) )
+		return pre_signal
+
+	def notch_filter(self, signal) :
+		offset_free_signal = [ signal[0] ] * len(signal)
+		for i in range(1,len(signal)) :
+			offset_free_signal[i] = signal[i] - signal[i-1] + ( 0.999 * offset_free_signal[i-1] )
+		return offset_free_signal
+
+	def fft(self, signal) :
+		bins = []
+		for k in range(0,len(signal)) :
+			fft_val = [ signal[n] * np.exp((-2j*n*k*np.pi)/len(signal)) for n in range(0,len(signal)) ]
+			bins.append( abs( sum( fft_val ) ) )
+		return bins
+
+###################################################################################################
+###################################################################################################
+###################################################################################################
+#######        This code snippet allows you to do multiprocessing in a class
+###################################################################################################
+###################################################################################################
+###################################################################################################
+from multiprocessing import Pool
+from functools import partial
+ 
+def _pickle_method(method):
+	func_name = method.im_func.__name__
+	obj = method.im_self
+	cls = method.im_class
+	if func_name.startswith('__') and not func_name.endswith('__'): #deal with mangled names
+		cls_name = cls.__name__.lstrip('_')
+		func_name = '_' + cls_name + func_name
+	return _unpickle_method, (func_name, obj, cls)
+ 
+def _unpickle_method(func_name, obj, cls):
+	for cls in cls.__mro__:
+		try:
+			func = cls.__dict__[func_name]
+		except KeyError:
+			pass
+		else:
+			break
+	return func.__get__(obj, cls)
+
+import copy_reg
+import types
+copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
+
+###################################################################################################
+###################################################################################################
+###################################################################################################
+###################################################################################################
+###################################################################################################
+###################################################################################################
+def cleaner(x):
+	if '(' in x:
+		return x[:-3]
+	else:
+		return x 
+
+class DataCleaner(object):
+	'''
+	params: 
+	directory: just need the directory that you downloaded your TedDic to
+	'''
+	def __init__(self,directory='/home/ubuntu/TEDLIUM_release2/'):
+		self.directory=directory
+		os.chdir(self.directory)
+		self.linedic=[]
+		with open("TEDLIUM.152k.dic","rb") as f:
+			for line in f:
+				self.linedic.append(line)
+		###create a python dicitonary of terms
+		### and clean the data
+		self.linedic=[x.split() for x in self.linedic if 'ERROR./text2pho.sh' not in x]
+		self.ted_dic={}
+		for i in self.linedic:
+			self.ted_dic[i[0]]=" ".join(i[1:])
+		self.ted_dic=[cleaner(x) for x in self.ted_dic.keys()]
+		#features will be used in a cleaning thing
+	 	#self.filename=filename
+	 	self.seconds=re.compile(r'\ [0-9]+\.[0-9]+\ [0-9]+\.[0-9]+')
+		self.feature_finder=re.compile(r'\<.*\,.*\,[a-zA-z]+\>')
+		self.word_finder=re.compile(r"\>.*\n")	
+		self.train_files = os.listdir(self.directory+"train/sph")
+		self.test_files = os.listdir(self.directory+"test/sph")		
+
+	def find_bad_sentences(self):
+		'''
+		this gets rid of the bad sentences in the Ted Dic
+		'''
+		def file_finder(file_name):
+			bad_words_dic=[]
+			word_finder=re.compile(r"\>.*\n")
+			with open(file_name,'rb') as f:
+				for line in f:
+						words=set(re.findall(word_finder,line)[0][2:-1].split())
+						for word in words:
+							if word not in ted_dic2_keys:
+								bad_words_dic.append(line)
+			if bad_words_dic!=[]:
+				return set(bad_words_dic)
+		print 'finding the text files that are bad'
+		os.chdir(self.directory+'train/stm')
+		files = os.listdir(self.directory+'train/stm')
+		#this will take some time
+		pool=Pool(cpu_count())
+		self.bad_train_sentences=set(list(chain(*filter(None,pool.map(file_finder,files)))))
+		pool.close()
+		#getting rid of shitty sentences in the test set
+		os.chdir(self.directory+'test/stm')
+		files = os.listdir(self.directory+'test/stm')
+		#this will take some time
+		pool=Pool(cpu_count())
+		self.bad_test_sentences=set(list(chain(*filter(None,pool.map(file_finder,files)))))
+		pool.close()
+		print 'done finding errors in db'
+
+	def vectorize(self,file_item):
+		'''that we can make any future we can imagine and we can play 
+		any games we want so i say let the world changing games begin thank you'''
+		return line=[class_vectorizor_1D(x) for x in file_item]
+
+	def transformation(self,line):
+		start_stop=[float(x) for x in re.findall(self.seconds,line)[0][1:].split()]
+		#print start_stop
+		start_stop_string=" ".join(str(x) for x in start_stop)
+		#speaker_features=re.findall(self.feature_finder,line)[0][1:-1].split(',')
+		words=re.findall(self.word_finder,line)[0][2:-1].split()
+		vectorized_words=vectorize(words)
+		#need frames in float
+		start=start_stop[0]
+		stop=start_stop[1]
+		return (start,stop,vectorized_words)
+
+	def process_file(self,filename):
+		command="sox "+filename+" "+filename[:-4]+".wav"
+		print 'processing '+filename
+		subprocess.call(command.split())
+		new_file=filename[:-4]+".wav"
+		wav = wave.open(new_file)
+		#delete the file
+		command2="rm "+self.new_file
+		subprocess.call(command2.split())
+		transcribed_file=[x for x in os.listdir('/home/ubuntu/TEDLIUM_release2/train/stm')
+		 					if x[:-4]==filename[:-4]][0]
+		subprocess.call('cd TEDLIUM_release2/train/sph'.split())
+		with open(transcribed_file,'rb') as f:
+			lines=[line for line in f if line not in self.bad_train_sentences]
+		#happens very fast, no need to multiprocess.
+		print 'extracting text from text version of '+filename
+		feature_pool=map(self.transformation,lines)
+		#make tuple of (wav instance, line correspondence)
+		x_train=[]
+		y_train=[]
+		for features in feature_pool:
+			start,stop,vectorized_words=features
+			wav.setpos(int(start*wav.getframerate()))
+			#turn this into a wave file
+			chunkdata = wav.readframes(int((stop-start)*wav.getframerate()))
+			#print self.chunkdata
+			wav.rewind() #rewind audiofile to the beginning
+			data = []
+			for i in range(0,len(chunkdata)) :
+				if i%2 != 0 :
+					continue
+				# convert the .wav to decimal
+				data.append(struct.unpack("<h", chunkdata[i:i+2])[0])
+			rate,chunk = (wav.getframerate(),256)
+			ms_duration = (len(data)/rate)*1000 # duration of stream in ms
+			featureVector=[]
+			#10-20ms
+			processor=SignalProcessing()
+			for i in range(0,int(ms_duration/10)):
+				framed = data[i*10:(i*10)+20]
+				mfcc1 = processor.mfcc(framed)
+				#output = n.update(mfcc)
+				#mp.update( mfcc,index,len(files) * 3 )
+				featureVector.append(mfcc1)
+			featureVector=np.asarray(featureVector,dtype='float32')
+			x_train.append(featureVector)
+			y_train.append(vectorized_words) 
+
+		return x_train,y_train
+
+	def train_network(self):
+		#TODO all of this
+		self.train_files
+
+		self.dnn=DeepSpeech(numpy_rng=numpy.random.RandomState(123), n_ins=featureVector,
+			layers_types=[ReLU, ReLU, ReLU, RecurrentBackForwardReLU, ReLU, Output_Layer],
+			layers_sizes=[1024,1024,1024,1024,1024], 
+			n_outs=len(classes), 
+			dropout_rates=[0.05, 0.1, 0.05, 0.0, 0.1],
+			fast_drop=True,
+			#L1_reg=0.,
+			#L2_reg=1./data.xtrain.shape[0],
+			debugprint=0)
+
+
+
+		print 'Training Regularized ReLU activated 3 layer NN model with 200 neurons per layer with 200 epochs'
+		test_error = dnn.score(data.xtest, data.ytest)
+		print("score: %f" % (1. - test_error))
+
+
+
+
+
+
+		#adadelta_nesterov
+		train_fn = dnn.get_adadelta_nesterov_trainer()
+		#sag
+		#train_fn = dnn.get_nesterov_momentum_trainer()
+		print '... training the model'
+
+
+
+
+
+
+		avg_costs = []
+		timer = time.time()
+
+
+		avg_cost = train_fn(x, y, lr=1.E-2)
+
+		avg_cost = train_fn(x, y)
+
+		dev_set_iterator = DatasetMiniBatchIterator(x_dev, y_dev)
+		train_scoref = self.score_classif(train_set_iterator)
+		dev_scoref = self.score_classif(dev_set_iterator)
+					
+		if type(avg_cost) == list:
+			avg_costs.append(avg_cost[0])
+		else:
+			avg_costs.append(avg_cost)
+
+		if verbose:
+			mean_costs = numpy.mean(avg_costs)
+			mean_train_errors = numpy.mean(train_scoref())
+			print('  epoch %i took %f seconds' %
+				(epoch, time.time() - timer))
+			print('  epoch %i, avg costs %f' %
+				(epoch, mean_costs))
+			print('  method %s, epoch %i, training error %f' %
+				(method, epoch, mean_train_errors))
+
+
+		dev_errors = numpy.mean(dev_scoref())
+
+
+		if dev_errors < best_dev_loss:
+			best_dev_loss = dev_errors
+			best_params = copy.deepcopy(self.params)
+			if verbose:
+				print('!!!  epoch %i, validation error of best model %f' %
+					(epoch, dev_errors))
+		        
+
+		for i, param in enumerate(best_params):
+			self.params[i] = param
 
 
 '''[relu,relu,relu,recurrent[x,x],relu, ouput]
@@ -50,8 +471,7 @@ to the approach described by Hannun et al. [16].
 '''
 
 BATCH_SIZE=200
-#SAG = Stochastic Average Gradient 
-SAG = False
+#SAG = Stochastic Average Gradient
 
 def softplus_f(v):
 	"""activation for a softplus layer, not here"""
@@ -359,8 +779,6 @@ class DeepSpeech(object):
 		self._accugrads = []  # for adadelta
 		self._accudeltas = []  # for adadelta
 		self._old_dxs = []  # for adadelta with Nesterov
-		if SAG:
-			self._sag_gradient_memory = []  # for SAG
 		if theano_rng == None:
 			theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 		self.x = T.fmatrix('x')
@@ -389,9 +807,6 @@ class DeepSpeech(object):
 					'accudelta') for t in this_layer.params])
 				self._old_dxs.extend([build_shared_zeros(t.shape.eval(),
 					'old_dxs') for t in this_layer.params])
-				if SAG:
-					self._sag_gradient_memory.extend([build_shared_zeros(tuple([(x_train.shape[0]+BATCH_SIZE-1) / BATCH_SIZE] + list(t.shape.eval())), 'sag_gradient_memory') for t in this_layer.params])
-					#self._sag_gradient_memory.extend([[build_shared_zeros(t.shape.eval(), 'sag_gradient_memory') for _ in xrange(x_train.shape[0] / BATCH_SIZE + 1)] for t in this_layer.params])
 				self.layers.append(this_layer)
 				layer_input = this_layer.output
 			else:
@@ -407,10 +822,6 @@ class DeepSpeech(object):
 					'accudelta') for t in this_layer.params])
 				self._old_dxs.extend([build_shared_zeros(t.shape.eval(),
 					'old_dxs') for t in this_layer.params])
-				if SAG:
-					self._sag_gradient_memory.extend([build_shared_zeros(tuple([(x_train.shape[0]+BATCH_SIZE-1) \
-						/ BATCH_SIZE] + list(t.shape.eval())), 'sag_gradient_memory') for t in this_layer.params])
-					#self._sag_gradient_memory.extend([[build_shared_zeros(t.shape.eval(), 'sag_gradient_memory') for _ in xrange(x_train.shape[0] / BATCH_SIZE + 1)] for t in this_layer.params])
 				self.layers.append(this_layer)
 				layer_input = this_layer.output
 		
@@ -480,150 +891,34 @@ class DeepSpeech(object):
 		return "_".join(map(lambda x: "_".join((x[0].__name__, x[1])),
 				zip(self.layers_types, dimensions_layers_str)))
 
+
+
 	#https://gist.github.com/SnippyHolloW/8a0f820261926e2f41cc 
 	#learning methods based on SnippyHollow code
-	def get_SGD_trainer(self):
-		""" Returns a plain SGD minibatch trainer with learning rate as param.
-		"""
+	def get_nesterov_momentum_trainer(self):
 		batch_x = T.fmatrix('batch_x')
 		batch_y = T.ivector('batch_y')
-		learning_rate = T.fscalar('lr')  # learning rate to use
+		learning_rate = T.fscalar('lr')
 		# compute the gradients with respect to the model parameters
-		# using mean_cost so that the learning rate is not too dependent
-		# on the batch size
 		gparams = T.grad(self.mean_cost, self.params)
 
-		# compute list of weights updates
 		updates = OrderedDict()
+
 		for param, gparam in zip(self.params, gparams):
-			if self.max_norm:
-				W = param - gparam * learning_rate
-				col_norms = W.norm(2, axis=0)
-				desired_norms = T.clip(col_norms, 0, self.max_norm)
-				updates[param] = W * (desired_norms / (1e-6 + col_norms))
-			else:
-				updates[param] = param - gparam * learning_rate
+			memory = param
+			new_momemtum = momentum * memory - learning_rate * gparam
+			updates[memory] = new_momemtum
+			updates[param] = param + momentum * new_momemtum - learning_rate * gparam
 
 		train_fn = theano.function(inputs=[theano.Param(batch_x),
-										theano.Param(batch_y),
-										theano.Param(learning_rate)],
-									outputs=self.mean_cost,
-									updates=updates,
-									givens={self.x: batch_x, self.y: batch_y})
-
-		return train_fn
-
-	def get_SAG_trainer(self, R=1., alpha=0., debug=False):  # alpha for reg. TODO
-		batch_x = T.fmatrix('batch_x')
-		batch_y = T.ivector('batch_y')
-		ind_minibatch = T.iscalar('ind_minibatch')
-		n_seen = T.fscalar('n_seen')
-		# compute the gradients with respect to the model parameters
-		cost = self.mean_cost
-		gparams = T.grad(cost, self.params)
-		#sparams = T.grad(cost, self.pre_activations)  # SAG specific
-		scaling = numpy.float32(1. / (R / 4. + alpha))
-		updates = OrderedDict()
-		for accugrad, gradient_memory, param, gparam in zip(
-				self._accugrads, self._sag_gradient_memory,
-				#self._accugrads, self._sag_gradient_memory[ind_minibatch.eval()],
-				self.params, gparams):
-			new = gparam + alpha * param
-			agrad = accugrad + new - gradient_memory[ind_minibatch]
-			# updates[gradient_memory[ind_minibatch]] = new
-			updates[gradient_memory] = T.set_subtensor(gradient_memory[ind_minibatch], new)
-
-			updates[param] = param - (scaling / n_seen) * agrad
-			updates[accugrad] = agrad
-
-		train_fn = theano.function(inputs=[theano.Param(batch_x), 
-			theano.Param(batch_y), theano.Param(ind_minibatch),
-			theano.Param(n_seen)],
-			outputs=cost,
-			updates=updates,
-			givens={self.x: batch_x, self.y: batch_y})
-
-		return train_fn
-
-	def get_adagrad_trainer(self):
-		""" Returns an Adagrad (Duchi et al. 2010) trainer using a learning rate.
-		"""
-		batch_x = T.fmatrix('batch_x')
-		batch_y = T.ivector('batch_y')
-		learning_rate = T.fscalar('lr')  # learning rate to use
-		# compute the gradients with respect to the model parameters
-		gparams = T.grad(self.mean_cost, self.params)
-
-		# compute list of weights updates
-		updates = OrderedDict()
-		for accugrad, param, gparam in zip(self._accugrads, self.params, gparams):
-			# c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
-			agrad = accugrad + gparam * gparam
-			dx = - (learning_rate / T.sqrt(agrad + self._eps)) * gparam
-			if self.max_norm:
-				W = param + dx
-				col_norms = W.norm(2, axis=0)
-				desired_norms = T.clip(col_norms, 0, self.max_norm)
-				updates[param] = W * (desired_norms / (1e-6 + col_norms))
-			else:
-				updates[param] = param + dx
-			updates[accugrad] = agrad
-
-		train_fn = theano.function(inputs=[theano.Param(batch_x), 
-			theano.Param(batch_y),
-			theano.Param(learning_rate)],
-			outputs=self.mean_cost,
-			updates=updates,
-			givens={self.x: batch_x, self.y: batch_y})
-
-		return train_fn
-
-	def get_adadelta_trainer(self):
-		""" Returns an Adadelta (Zeiler 2012) trainer using self._rho and
-		self._eps params.
-		"""
-		batch_x = T.fmatrix('batch_x')
-		batch_y = T.ivector('batch_y')
-		# compute the gradients with respect to the model parameters
-		gparams = T.grad(self.mean_cost, self.params)
-
-		# compute list of weights updates
-		updates = OrderedDict()
-		for accugrad, accudelta, param, gparam in zip(self._accugrads,
-				self._accudeltas, self.params, gparams):
-			# c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
-			agrad = self._rho * accugrad + (1 - self._rho) * gparam * gparam
-			dx = - T.sqrt((accudelta + self._eps)
-						/ (agrad + self._eps)) * gparam
-			updates[accudelta] = (self._rho * accudelta
-							+ (1 - self._rho) * dx * dx)
-			if self.max_norm:
-				W = param + dx
-				col_norms = W.norm(2, axis=0)
-				desired_norms = T.clip(col_norms, 0, self.max_norm)
-				updates[param] = W * (desired_norms / (1e-6 + col_norms))
-			else:
-				updates[param] = param + dx
-			updates[accugrad] = agrad
-
-		train_fn = theano.function(inputs=[theano.Param(batch_x),
-											theano.Param(batch_y)],
+											theano.Param(batch_y),
+											theano.Param(learning_rate)],
 										outputs=self.mean_cost,
 										updates=updates,
 										givens={self.x: batch_x, self.y: batch_y})
 
 		return train_fn
 
-	def nesterov_step(self):
-		beta = 0.5
-		updates = OrderedDict()
-		for param, dx in zip(self.params, self._old_dxs):
-			updates[param] = param + beta * dx
-		nesterov_fn = theano.function(inputs=[],
-				outputs=[],
-				updates=updates,
-				givens={})
-		nesterov_fn()
 
 	def get_adadelta_nesterov_trainer(self):
 		""" Returns an Adadelta (Zeiler 2012) trainer using self._rho and
@@ -665,42 +960,6 @@ class DeepSpeech(object):
 
 		return train_fn
 
-	def get_adadelta_rprop_trainer(self):
-		""" TODO
-		"""
-		# TODO working on that
-		batch_x = T.fmatrix('batch_x')
-		batch_y = T.ivector('batch_y')
-		# compute the gradients with respect to the model parameters
-		gparams = T.grad(self.mean_cost, self.params)
-
-		# compute list of weights updates
-		updates = OrderedDict()
-		for accugrad, accudelta, param, gparam in zip(self._accugrads,
-			    self._accudeltas, self.params, gparams):
-			# c.f. Algorithm 1 in the Adadelta paper (Zeiler 2012)
-			agrad = self._rho * accugrad + (1 - self._rho) * gparam * gparam
-			dx = - T.sqrt((accudelta + self._eps)
-					/ (agrad + self._eps)) * T.switch(gparam < 0, -1., 1.)
-			updates[accudelta] = (self._rho * accudelta
-			                      + (1 - self._rho) * dx * dx)
-			if self.max_norm:
-				W = param + dx
-				col_norms = W.norm(2, axis=0)
-				desired_norms = T.clip(col_norms, 0, self.max_norm)
-				updates[param] = W * (desired_norms / (1e-6 + col_norms))
-			else:
-				updates[param] = param + dx
-			updates[accugrad] = agrad
-
-		train_fn = theano.function(inputs=[theano.Param(batch_x),
-											theano.Param(batch_y)],
-									outputs=self.mean_cost,
-									updates=updates,
-									givens={self.x: batch_x, self.y: batch_y})
-
-		return train_fn
-
 	def score_classif(self, given_set):
 		""" Returns functions to get current classification errors. """
 		batch_x = T.fmatrix('batch_x')
@@ -716,6 +975,12 @@ class DeepSpeech(object):
 
 		return scoref
 
+	def score(self, x, y):
+		""" error rates wrapper """
+		iterator = DatasetMiniBatchIterator(x, y)
+		scoref = self.score_classif(iterator)
+		return numpy.mean(scoref())	
+
 	def predict(self,X):
 		""" Returns functions to get current classification errors. """
 		batch_x = T.fmatrix('batch_x')#fmatrix
@@ -725,142 +990,46 @@ class DeepSpeech(object):
 		return predictor(X)
 
 
-####################################################################################
-####################################################################################
-####################################################################################
-####################################################################################
 
 ####################################################################################
-####################################################################################
-####################################################################################
-####################################################################################
+########################      standard training method      ########################
 ####################################################################################
 
-def add_fit_and_score_early_stop(class_to_chg):
-	""" Mutates a class to add the fit() and score() functions to a NeuralNet.
-	"""
-	from types import MethodType
-	def fit(self, x_train, y_train, x_dev=None, y_dev=None,
-			max_epochs=20, early_stopping=True, split_ratio=0.1, # TODO 100+ epochs
-			method='adadelta', verbose=False, plot=False):
-		import time, copy
-		if x_dev == None or y_dev == None:
-			from sklearn.cross_validation import train_test_split
-			x_train, x_dev, y_train, y_dev = train_test_split(x_train, y_train,
-					test_size=split_ratio, random_state=42)
-		if method == 'sgd':
-			train_fn = self.get_SGD_trainer()
-		elif method == 'adagrad':
-			train_fn = self.get_adagrad_trainer()
-		elif method == 'adadelta':
-			train_fn = self.get_adadelta_trainer()
-		elif method == 'adadelta_nesterov':
-			train_fn = self.get_adadelta_nesterov_trainer()
-		elif method == 'adadelta_rprop':
-			train_fn = self.get_adadelta_rprop_trainer()
-		elif method == 'sag':
-			#train_fn = self.get_SAG_trainer(R=1+numpy.max(numpy.sum(x_train**2, axis=1)))
-			if BATCH_SIZE > 1:
-				line_sums = numpy.sum(x_train**2, axis=1)
-				train_fn = self.get_SAG_trainer(R=numpy.max(numpy.mean(
-					line_sums[:(line_sums.shape[0]/BATCH_SIZE)*BATCH_SIZE].reshape((line_sums.shape[0]/BATCH_SIZE,
-						BATCH_SIZE)), axis=1)),
-					alpha=1./x_train.shape[0])
-			else:
-				train_fn = self.get_SAG_trainer(R=numpy.max(numpy.sum(x_train**2,
-					axis=1)), alpha=1./x_train.shape[0])
-		train_set_iterator = DatasetMiniBatchIterator(x_train, y_train)
-		if method == 'sag':
-			sag_train_set_iterator = DatasetMiniBatchIterator(x_train, y_train, randomize=True)
-		dev_set_iterator = DatasetMiniBatchIterator(x_dev, y_dev)
-		train_scoref = self.score_classif(train_set_iterator)
-		dev_scoref = self.score_classif(dev_set_iterator)
-		best_dev_loss = numpy.inf
-		epoch = 0
-		# TODO early stopping (not just cross val, also stop training)
-		if plot:
-			verbose = True
-			self._costs = []
-			self._train_errors = []
-			self._dev_errors = []
-			self._updates = []
- 
-		seen = numpy.zeros(((x_train.shape[0]+BATCH_SIZE-1) / BATCH_SIZE,), dtype=numpy.bool)
-		n_seen = 0
 
-		patience = 1000  
-		patience_increase = 2.  # wait this much longer when a new best is found
-		improvement_threshold = 0.995  # a relative improvement of this much is considered significant
-		done_looping = False
-		print '... training the model'
-		test_score = 0.
-		start_time = time.clock()
-		done_looping = False
-		epoch = 0
-		timer = None
-		while (epoch < max_epochs) and (not done_looping):
-			if not verbose:
-				sys.stdout.write("\r%0.2f%%" % (epoch * 100./ max_epochs))
-				sys.stdout.flush()
-			avg_costs = []
-			timer = time.time()
-			if method == 'sag':
-				for ind_minibatch, x, y in sag_train_set_iterator:
-					if not seen[ind_minibatch]:
-						seen[ind_minibatch] = 1
-						n_seen += 1
-					if 'nesterov' in method:
-						self.nesterov_step()
-					avg_cost = train_fn(x, y, ind_minibatch, n_seen)
-					if type(avg_cost) == list:
-						avg_costs.append(avg_cost[0])
-					else:
-						avg_costs.append(avg_cost)
-			else:
-				for iteration, (x, y) in enumerate(train_set_iterator):
-					if method == 'sgd' or method == 'adagrad':
-						avg_cost = train_fn(x, y, lr=1.E-2)
-					elif 'adadelta' in method:
-						avg_cost = train_fn(x, y)
-					if type(avg_cost) == list:
-						avg_costs.append(avg_cost[0])
-					else:
-						avg_costs.append(avg_cost)
-			if verbose:
-				mean_costs = numpy.mean(avg_costs)
-				mean_train_errors = numpy.mean(train_scoref())
-				print('  epoch %i took %f seconds' %
-					(epoch, time.time() - timer))
-				print('  epoch %i, avg costs %f' %
-					(epoch, mean_costs))
-				print('  method %s, epoch %i, training error %f' %
-					(method, epoch, mean_train_errors))
-				if plot:
-					self._costs.append(mean_costs)
-					self._train_errors.append(mean_train_errors)
-			dev_errors = numpy.mean(dev_scoref())
-			if plot:
-				self._dev_errors.append(dev_errors)
-			if dev_errors < best_dev_loss:
-				best_dev_loss = dev_errors
-				best_params = copy.deepcopy(self.params)
-				if verbose:
-					print('!!!  epoch %i, validation error of best model %f' %
-						(epoch, dev_errors))
-			epoch += 1
-			if patience <= iteration:
-				done_looping = True
-				break            
-		if not verbose:
-			print("")
-		for i, param in enumerate(best_params):
-			self.params[i] = param
 
-	def score(self, x, y):
-		""" error rates """
-		iterator = DatasetMiniBatchIterator(x, y)
-		scoref = self.score_classif(iterator)
-		return numpy.mean(scoref())
+def score(dnn, x, y):
+	""" error rates """
+	iterator = DatasetMiniBatchIterator(x, y)
+	scoref = dnn.score_classif(iterator)
+	return numpy.mean(scoref())
 
-	class_to_chg.fit = MethodType(fit, None, class_to_chg)
-	class_to_chg.score = MethodType(score, None, class_to_chg)
+
+################################################################################################
+########################             Language Model            #################################
+################################################################################################
+''' 
+Specifically, we aim to find a sequence c that
+maximizes the combined objective:
+Q(c) = log(P(c|x)) + α log(Plm(c)) + β word count(c)
+where α and β are tunable parameters (set by cross-validation) that control the trade-off between
+the RNN, the language model constraint and the length of the sentence. The term Plm denotes the
+probability of the sequence c according to the N-gram model. We maximize this objective using a
+highly optimized beam search algorithm, with a typical beam size in the range 1000-8000—similar
+to the approach described by Hannun et al. [16].'''
+#TODO language model to decode RNN output
+
+'''
+4-We use the KenLM toolkit [17] to train the N-gram language models in our experiments.
+'''
+
+
+
+"""
+'''Data parallelism is not easily implemented, however, when utterances have different lengths since
+they cannot be combined into a single matrix multiplication. We resolve the problem by sorting
+our training examples by length and combining only similarly-sized utterances into minibatches,
+padding with silence when necessary so that all utterances in a batch have the same length. This
+solution is inspired by the ITPACK/ELLPACK sparse matrix format [21]; a similar solution was
+used by the Sutskever et al. [41] to accelerate RNNs for text.'''
+
+
