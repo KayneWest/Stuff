@@ -110,30 +110,20 @@ class SignalProcessing:
 	fft: 				# discrete fast fourier transform
 	'''
 	def mfcc(self, signal) :
-		# some signal filtering
 		offset_free_signal = self.notch_filter(signal)
 		pre_signal = self.preemphasis_filter(offset_free_signal)
 		windowed_signal = self.hamming_window(pre_signal)
-		# convert signal (time-domain) to frequency domain
 		transformed_signal = self.fft(windowed_signal)
-		# the human ear has high-frequency resolution at low-frequency parts of the spetrum
-		# and low frequency resolution at high parts of the spectrum
-		# thus to more accurately mimick the frequency  resolution of the human ear
-		# we need to convert a frequency into the mel-scale
 		fbank = self.mel_filter(transformed_signal)
 		c = self.cepstral_coeffs(fbank)
-		# energy measure
 		squares = [ n*n for n in signal ]
 		sigma = np.log(sum(squares)) 
 		logE = sigma if sigma > -50 else -50
-		# the final feature vector consists of 14 coefficients
-		# the log-energy coefficient and the 13 cepstral coefficients
 		c.append(logE)
 		return c
 
 	def cepstral_coeffs(self, fbank) :
 		log_fbank = [ np.log(n) if np.log(n) > -50 else -50 for n in fbank ]
-		# Discrete Cosine Transform
 		c = []
 		for i in range(0,13) :
 			p = [ log_fbank[j-1] * np.cos(((np.pi*i)/23)*(j-0.5)) for j in range(1,24) ]
@@ -141,10 +131,8 @@ class SignalProcessing:
 		return c
 
 	def mel_filter(self, spectrum,n=24) :
-		# mel scale function
 		def mel(x) :
 			return 2595 * np.log10(1 + (x/700))
-		# inverse mel function
 		def inv_mel(x) :
 			return 700 * ( np.exp(x/1127) - 1 )
 		fstart = 64 # 64 Hz  
